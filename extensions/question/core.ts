@@ -14,7 +14,11 @@ export interface QuestionParams {
 	questions: { question: string; options: QuestionOption[] }[];
 }
 
-export interface QuestionDetails {
+// Type alias, not an interface: pi's `ToolResultMessage.details` is gated by
+// `IsJsonCompatible<TDetails>`, which requires an implicit index signature.
+// Interfaces have none, so an interface here makes every synthetic toolResult
+// message carrying these details unassignable to `AgentMessage`.
+export type QuestionDetails = {
 	questions: { question: string; options: string[] }[];
 	answers: string[][];
 	notes: (string | null)[];
