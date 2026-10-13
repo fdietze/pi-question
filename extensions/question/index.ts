@@ -1,34 +1,5 @@
-/**
- * Question Tool — ask one OR several questions in a single call. Each question
- * is multi-select checkboxes; one global free-form note applies to the whole
- * batch. The custom UI occupies pi's bottom dock below the transcript.
- *
- * Batch (≥2 questions): master-detail. A count banner + a list of ALL questions
- * (with a ">" marker on the active one and a ○/✓ answered indicator) sits on top;
- * below a thin divider, ONLY the active question's options AND its own note are
- * shown, swapping as you Tab between questions (each question owns its note).
- * Tab/Shift+Tab switch question; ↑/↓ move within the active question's option
- * rows + note; Space toggles; typing forwards to the note (focus jumps there if
- * text changed). Enter advances to the next question (auto-accepting the
- * focused option first if that question is unchecked and the cursor is on an
- * option row) and resets the cursor to the top of the next question; on the
- * last question, Enter submits the whole batch. Enter never wraps past the
- * end — Tab does. Esc MINIMIZES the dock: the chat editor regains input, a
- * one-line indicator widget appears, `/question` creates a fresh presentation
- * from the same draft, and submitting a chat message resolves the question as
- * skipped so the message itself reaches the agent. There is no cancel key.
- * A modal opened by the recovery GATE is the one exception: pi dispatches no
- * editor input while that gate awaits, so Esc resolves it as skipped right
- * away (the already-submitted prompt is the continuation) and no indicator is
- * shown. Abort and shutdown settle any modal as cancelled.
- *
- * Single question: the banner/list/marker are omitted, so it renders exactly
- * like a plain one-question prompt (question text, options, note).
- *
- * An option may carry a short `tag` rendered as a semantic-colored pill before
- * its label (e.g. "recommended"). All text wraps to terminal width.
- * Pure result/cursor/skip logic lives in ./core.ts (unit-tested).
- */
+// Pi integration: one blocking call plus durable, independently answerable
+// background batches. All batches share one dock and pending-count widget.
 
 import type {
   ExtensionAPI,
@@ -37,6 +8,11 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { createBackgroundQuestions } from "./background-questions.ts";
+import {
+  ANSWER_MESSAGE_TYPE, DISCARDED_ANSWER_MESSAGE_TYPE, isAssociatedAnswer,
+  loadBackgroundBatches, repairBackgroundReceipts,
+} from "./background-state.ts";
 import {
   formatBusyQuestionResult,
   isSkipEligibleInput,
@@ -104,6 +80,9 @@ const QuestionSchema = Type.Object({
 });
 
 const QuestionParamsSchema = Type.Object({
+  blocking: Type.Optional(Type.Boolean({
+    description: "Wait for the answer (default true). Set false to queue a durable question and continue working; the answer arrives later as a separate message.",
+  })),
   questions: Type.Array(QuestionSchema, {
     description:
       "One or more questions to ask at once. Batch several independent clarifications into a single call to gather more per round-trip. Each question is its own multi-select list; the user answers them all together with one shared free-form note.",
@@ -111,25 +90,6 @@ const QuestionParamsSchema = Type.Object({
 });
 
 const PENDING_WIDGET_KEY = "question-pending";
-const PENDING_WIDGET_TEXT =
-  "? question pending · /question to answer · sending a message skips";
-
-// One non-interactive indicator line above the chat input, shown only while the
-// active question dock is minimized. Width-safe: pi passes the render width,
-// so the line truncates on narrow terminals instead of wrapping.
-const showPendingWidget = (ctx: ExtensionContext) => {
-  ctx.ui.setWidget(PENDING_WIDGET_KEY, (_tui, theme) => ({
-    render: (width: number) => [
-      truncateToWidth(theme.fg("accent", PENDING_WIDGET_TEXT), width),
-    ],
-    invalidate: () => {},
-  }));
-};
-
-const clearPendingWidget = (ctx: ExtensionContext) => {
-  ctx.ui.setWidget(PENDING_WIDGET_KEY, undefined);
-};
-
 /** The one question (live tool call or recovered) whose modal may be open. */
 interface ActiveQuestion {
   controller: QuestionModalController;
@@ -157,6 +117,31 @@ export default function question(pi: ExtensionAPI) {
   let presentationTimer: ReturnType<typeof setTimeout> | undefined;
   let presentationEnabled = false;
   let runtimeActive = true;
+  let pickerController: AbortController | undefined;
+  const dismissPicker = () => {
+    pickerController?.abort();
+    pickerController = undefined;
+  };
+  const backgrounds = createBackgroundQuestions(pi, {
+    blocking: () => active?.controller,
+    picking: () => pickerController !== undefined,
+    changed: (ctx) => updatePendingWidget(ctx),
+  });
+  const updatePendingWidget = (ctx: ExtensionContext) => {
+    const count = backgrounds.pending().length + (active ? 1 : 0);
+    const minimized = active?.controller.state() === "minimized" ||
+      (!active && !backgrounds.shown());
+    if (count === 0 || (count === 1 && !minimized)) {
+      ctx.ui.setWidget(PENDING_WIDGET_KEY, undefined);
+      return;
+    }
+    const text = `? ${count} question batch${count === 1 ? "" : "es"} pending · /question to answer${active?.controller.state() === "minimized" ? " · sending a message skips the blocking batch" : ""}`;
+    ctx.ui.setWidget(PENDING_WIDGET_KEY, (_tui, theme) => ({
+      render: (width: number) => [truncateToWidth(theme.fg("accent", text), width)],
+      invalidate: () => {},
+    }));
+  };
+
 
   const refreshRecoveries = (branch: readonly unknown[]) => {
     const loaded = loadQuestionRecoveries(branch);
@@ -190,11 +175,12 @@ export default function question(pi: ExtensionAPI) {
       try {
         // Known residual (pre-existing on master): pi's session replacement resets
         // extension UI without completing this modal, so the promise can outlive it.
+        dismissPicker();
+        backgrounds.park();
         const opened = openQuestionModal(ctx, action.params, {
           minimizable: options.minimizable,
-          onStateChange: (state) => {
-            if (state === "minimized") showPendingWidget(ctx);
-            else clearPendingWidget(ctx);
+          onStateChange: () => {
+            updatePendingWidget(ctx);
           },
         });
         session = opened;
@@ -207,6 +193,7 @@ export default function question(pi: ExtensionAPI) {
           },
           finished: recoveryFinished,
         };
+        updatePendingWidget(ctx);
         const { result } = await opened.completion;
         if (!runtimeActive) {
           throw new Error("Question recovery stopped with the session");
@@ -220,6 +207,7 @@ export default function question(pi: ExtensionAPI) {
           ctx.sessionManager.buildContextEntries(),
           currentLoaded,
           ctx.mode,
+          backgrounds.callIds(),
         );
         if (currentAction?.call.toolCallId !== action.call.toolCallId) {
           ctx.ui.notify(
@@ -258,7 +246,7 @@ export default function question(pi: ExtensionAPI) {
         if (session && active?.controller === session.controller) {
           active = undefined;
         }
-        if (session) clearPendingWidget(ctx);
+        if (session && runtimeActive) backgrounds.resume(ctx);
         openingRecoveryId = undefined;
         openingRecoveryPromise = undefined;
         openingShouldSendContinuation = false;
@@ -274,19 +262,46 @@ export default function question(pi: ExtensionAPI) {
     presentationTimer = undefined;
   };
 
-  pi.on("context", (event) => {
-    if (recoveries.size === 0) return;
-    const messages = repairQuestionContext(event.messages, recoveries.values());
-    if (messages.length === event.messages.length) return;
-    return { messages };
+  pi.on("context", (event, ctx) => {
+    const batches = loadBackgroundBatches(ctx.sessionManager.getBranch());
+    const filtered = event.messages.filter((message) => message.role !== "custom" ||
+      (message.customType !== DISCARDED_ANSWER_MESSAGE_TYPE &&
+        (message.customType !== ANSWER_MESSAGE_TYPE || isAssociatedAnswer(message, batches))));
+    const repaired = repairBackgroundReceipts(filtered, batches.values());
+    return { messages: repairQuestionContext(repaired, recoveries.values()) };
   });
 
+  pi.on("message_end", (event, ctx) => {
+    const message = event.message;
+    if (message.role !== "custom" || message.customType !== ANSWER_MESSAGE_TYPE) return;
+    const batches = loadBackgroundBatches(ctx.sessionManager.getBranch());
+    const answerId = (message.details as { answerId?: string } | undefined)?.answerId;
+    if (answerId) backgrounds.delivered(answerId);
+    const requestId = (message.details as { requestId?: string } | undefined)?.requestId;
+    if (!isAssociatedAnswer(message, batches) ||
+      (requestId !== undefined && batches.get(requestId)?.delivered)) {
+      // Queues survive /tree and stop. Same-role replacement removes abandoned
+      // answer text before persistence/render; context also drops the tombstone.
+      return { message: { ...message, customType: DISCARDED_ANSWER_MESSAGE_TYPE,
+        content: [], display: false } };
+    }
+  });
+
+  pi.on("agent_end", () => backgrounds.ended());
+  pi.on("agent_start", (_event, ctx) => backgrounds.retry(ctx));
+
   pi.on("session_tree", (_event, ctx) => {
+    dismissPicker();
+    // Close the old branch's blocking presentation without recording an answer.
+    active?.suppressContinuation();
+    active?.controller.cancel();
     refreshRecoveries(ctx.sessionManager.getBranch());
+    backgrounds.restore(ctx);
   });
 
   pi.on("session_shutdown", (event, ctx) => {
     runtimeActive = false;
+    dismissPicker();
     presentationEnabled = false;
     clearPresentationTimer();
     // Replacement and reload await idle, so an open modal must settle there or
@@ -299,7 +314,8 @@ export default function question(pi: ExtensionAPI) {
     if (shouldSettleModalOnShutdown(event.reason)) {
       active?.controller.cancel();
     }
-    clearPendingWidget(ctx);
+    backgrounds.shutdown();
+    ctx.ui.setWidget(PENDING_WIDGET_KEY, undefined);
   });
 
   // A normal chat submission while the active question is minimized resolves it
@@ -330,15 +346,39 @@ export default function question(pi: ExtensionAPI) {
   pi.registerCommand("question", {
     description: "Expand the pending question overlay",
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
-      if (!active) {
+      if (pickerController) return;
+      const blocking = active;
+      const pending = backgrounds.pending();
+      if (!blocking && pending.length === 0) {
         ctx.ui.notify("No question is pending.", "info");
         return;
       }
-      // A shown dock already owns input; expanding is only meaningful when
-      // minimized. The persistent draft initializes a fresh component.
-      if (active.controller.state() === "minimized") {
-        active.controller.expand();
+      if ((blocking ? 1 : 0) + pending.length === 1) {
+        if (blocking) blocking.controller.expand();
+        else backgrounds.show(pending[0].pending.requestId, ctx);
+        return;
       }
+      const picker = new AbortController();
+      pickerController = picker;
+      blocking?.controller.minimize();
+      backgrounds.minimize();
+      const choices = [
+        ...(blocking ? [{ label: "Blocking question (agent waiting)", id: undefined }] : []),
+        ...pending.map((batch, i) => ({
+          label: `${i + 1}. ${batch.pending.params.questions[0]?.question ?? "Question"}`,
+          id: batch.pending.requestId,
+        })),
+      ];
+      let choice: string | undefined;
+      try {
+        choice = await ctx.ui.select("Pending question batches", choices.map((c) => c.label), { signal: picker.signal });
+      } finally {
+        if (pickerController === picker) pickerController = undefined;
+      }
+      if (!runtimeActive || picker.signal.aborted || !choice) return;
+      const selected = choices.find((c) => c.label === choice);
+      if (selected?.id) backgrounds.show(selected.id, ctx);
+      else if (active === blocking) blocking?.controller.expand();
     },
   });
 
@@ -357,6 +397,7 @@ export default function question(pi: ExtensionAPI) {
         ctx.sessionManager.buildContextEntries(),
         loaded,
         ctx.mode,
+        backgrounds.callIds(),
       );
       if (!action) return;
 
@@ -394,6 +435,7 @@ export default function question(pi: ExtensionAPI) {
   pi.on("session_start", (event, ctx) => {
     const branch = ctx.sessionManager.getBranch();
     const loaded = refreshRecoveries(branch);
+    backgrounds.restore(ctx);
     presentationEnabled = isStartupPresentation(
       event.reason,
       ctx.sessionManager.getSessionFile(),
@@ -405,6 +447,7 @@ export default function question(pi: ExtensionAPI) {
       ctx.sessionManager.buildContextEntries(),
       branch,
       loaded,
+      backgrounds.callIds(),
     );
     if (
       initialAction.kind === "none" ||
@@ -431,6 +474,7 @@ export default function question(pi: ExtensionAPI) {
         ctx.sessionManager.buildContextEntries(),
         currentBranch,
         currentLoaded,
+        backgrounds.callIds(),
       );
       if (action.kind === "redeliver") {
         pi.sendUserMessage(action.recovery.record.userMessage);
@@ -451,20 +495,26 @@ export default function question(pi: ExtensionAPI) {
     name: "question",
     label: "Question",
     description:
-      "Ask the user one or more questions whenever you need their input. Prefer this over asking in plain text. Include an executive summary, assuming the user did not read the whole conversation. Prefer orthogonal questions and options. Pass several questions at once to gather more information per round-trip; each is multi-select checkboxes and the batch shares one free-form note. When you have a recommendation, tag the recommended option(s) and list them first.",
+      "Ask the user one or more questions whenever you need their input. Prefer this over asking in plain text. Include an executive summary, assuming the user did not read the whole conversation. Prefer orthogonal questions and options. Pass several questions at once to gather more information per round-trip; each is multi-select checkboxes and the batch shares one free-form note. When you have a recommendation, tag the recommended option(s) and list them first. Set blocking:false for optional input so you can continue working while the user answers later.",
     parameters: QuestionParamsSchema,
 
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
+      if (params.blocking === false && ctx.mode === "tui") {
+        return backgrounds.queue(toolCallId, params, ctx);
+      }
       // One question at a time: a second call is rejected deterministically
       // instead of silently replacing the active modal's controller.
       if (active) {
         return formatBusyQuestionResult();
       }
 
+      if (ctx.mode === "tui") {
+        dismissPicker();
+        backgrounds.park();
+      }
       const session = openQuestionModal(ctx, params, {
-        onStateChange: (state) => {
-          if (state === "minimized") showPendingWidget(ctx);
-          else clearPendingWidget(ctx);
+        onStateChange: () => {
+          updatePendingWidget(ctx);
         },
       });
 
@@ -486,7 +536,7 @@ export default function question(pi: ExtensionAPI) {
         if (active?.controller === session.controller) {
           active = undefined;
         }
-        clearPendingWidget(ctx);
+        if (runtimeActive) backgrounds.resume(ctx);
         resolveFinished();
       };
       active = {
@@ -497,6 +547,7 @@ export default function question(pi: ExtensionAPI) {
         suppressContinuation: () => {},
         finished,
       };
+      updatePendingWidget(ctx);
 
       // Honor the tool's abort signal (Esc interrupt, /new, /fork, /resume):
       // without this the run would keep awaiting a modal the user can no longer

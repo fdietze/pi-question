@@ -147,7 +147,7 @@ function parseQuestionDetails(value: unknown): QuestionDetails | undefined {
 	};
 }
 
-function parseQuestionToolResult(value: unknown): QuestionToolResult | undefined {
+export function parseQuestionToolResult(value: unknown): QuestionToolResult | undefined {
 	const result = record(value);
 	if (!result || !Array.isArray(result.content) || result.content.length !== 1) {
 		return undefined;
@@ -336,7 +336,8 @@ export function findLatestDanglingQuestionCall(
 		if (
 			call.name === "question" &&
 			!pending.resolved.has(call.toolCallId) &&
-			!recoveredToolCallIds.has(call.toolCallId)
+			!recoveredToolCallIds.has(call.toolCallId) &&
+			record(call.arguments)?.blocking !== false
 		) {
 			return { toolCallId: call.toolCallId, arguments: call.arguments };
 		}
@@ -518,10 +519,11 @@ export type StartupRecoveryAction =
 function selectRecoveryModal(
 	contextEntries: readonly unknown[],
 	recoveries: ReadonlyMap<string, LoadedQuestionRecovery>,
+	excludedIds: ReadonlySet<string> = new Set(),
 ): RecoveryModalAction | undefined {
 	const call = findLatestDanglingQuestionCall(
 		contextEntries,
-		new Set(recoveries.keys()),
+		new Set([...recoveries.keys(), ...excludedIds]),
 	);
 	if (!call) return undefined;
 	const params = parseQuestionParams(call.arguments);
@@ -534,8 +536,9 @@ export function selectRecoveryGate(
 	contextEntries: readonly unknown[],
 	recoveries: ReadonlyMap<string, LoadedQuestionRecovery>,
 	mode: string,
+	excludedIds: ReadonlySet<string> = new Set(),
 ): RecoveryModalAction | undefined {
-	return mode === "tui" ? selectRecoveryModal(contextEntries, recoveries) : undefined;
+	return mode === "tui" ? selectRecoveryModal(contextEntries, recoveries, excludedIds) : undefined;
 }
 
 // Only a freshly opened persisted session may auto-show or redeliver. The awaited
@@ -554,8 +557,9 @@ export function selectStartupRecovery(
 	contextEntries: readonly unknown[],
 	branchEntries: readonly unknown[],
 	recoveries: ReadonlyMap<string, LoadedQuestionRecovery>,
+	excludedIds: ReadonlySet<string> = new Set(),
 ): StartupRecoveryAction {
-	const modal = selectRecoveryModal(contextEntries, recoveries);
+	const modal = selectRecoveryModal(contextEntries, recoveries, excludedIds);
 	if (modal) return modal;
 	const pending = [...recoveries.values()]
 		.filter((recovery) => !isRecoveryContinuationComplete(branchEntries, recovery))

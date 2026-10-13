@@ -53,6 +53,8 @@ export interface QuestionModalSession {
 export interface QuestionModalOptions {
   /** Esc minimizes (default true). The recovery gate passes false. */
   minimizable?: boolean;
+  /** Create the draft/controller without taking dock ownership yet. */
+  initiallyMinimized?: boolean;
   /** Fires on minimize/expand. A non-minimizable modal never reports
    * "minimized", so gate modals show no pending indicator. */
   onStateChange?: (state: QuestionModalState) => void;
@@ -221,7 +223,7 @@ export function openQuestionModal(
     }),
   );
 
-  const initialGeneration = lifecycle.show();
+  const initialGeneration = options.initiallyMinimized ? undefined : lifecycle.show();
   if (initialGeneration !== undefined) present(initialGeneration);
 
   return { controller, completion };
