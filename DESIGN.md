@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The `question` tool presents one or more multi-select questions in a dock below the transcript, with a shared note. `blocking` defaults to `true`: the answer is the tool result. With `blocking: false`, the call acknowledges a durably stored background batch immediately and the answer arrives later as a custom message. Background questions require the TUI, like the existing form.
+The `question` tool presents one or more multi-select questions in a dock below the transcript, each with its own note and optionally preceded by the agent's `context`. `blocking` defaults to `true`: the answer is the tool result. With `blocking: false`, the call acknowledges a durably stored background batch immediately and the answer arrives later as a custom message. Background questions require the TUI, like the existing form.
 
 ## Question lifetimes
 

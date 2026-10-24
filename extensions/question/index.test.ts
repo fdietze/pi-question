@@ -96,7 +96,7 @@ test("background calls return immediately, coexist, preserve draft, and ignore c
   const h = harness();
   const abort = new AbortController();
   const receipt = await h.execute("first", { ...params("First?"), blocking: false }, abort.signal);
-  assert.match(receipt.content[0].text, /queued/);
+  assert.match(receipt.content[0].text, /Queued/);
   assert.equal(h.branch().length, 1);
   h.key(" ");
   h.key("draft note");
@@ -143,7 +143,7 @@ test("default blocking semantics and priority park and restore background draft"
   assert.match(h.render()!, /Blocking/);
   assert.equal(settled, false);
   const busy = await h.execute("busy", { ...params(), blocking: true });
-  assert.match(busy.content[0].text, /already pending/);
+  assert.match(busy.content[0].text, /another blocking question is still open/);
   await h.execute("another-background", { ...params("Another?"), blocking: false });
   assert.match(h.render()!, /Blocking/);
   h.key("\x1b");
@@ -283,4 +283,15 @@ test("Tab starts the cursor on the first option of the next question", async () 
   const result = await pending;
   assert.match(result.content[0].text, /Two\?[\s\S]*Yes/);
   assert.doesNotMatch(result.content[0].text, /Two\?[\s\S]*No/);
+});
+
+test("context is shown above the questions and not echoed in the result", async () => {
+  const h = harness();
+  const pending = h.execute("ctx", { context: "Choosing the release day.", ...params("Ship?") });
+  await flush();
+  const view = h.render()!;
+  assert.ok(view.indexOf("Choosing the release day.") < view.indexOf("Ship?"));
+  h.key("\r");
+  const result = await pending;
+  assert.doesNotMatch(result.content[0].text, /release day/);
 });

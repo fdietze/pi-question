@@ -99,7 +99,8 @@ export function openQuestionModal(
           content: [
             {
               type: "text",
-              text: "Error: UI not available (running in non-interactive mode)",
+              // RPC sessions have a UI but no terminal dock, hence "terminal UI".
+              text: "Not asked: this session has no terminal UI for the question form. Ask in plain text or continue with stated assumptions.",
             },
           ],
           details: {

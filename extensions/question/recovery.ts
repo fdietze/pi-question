@@ -60,6 +60,8 @@ export function parseQuestionParams(value: unknown): QuestionParams | undefined 
 	if (!input || !Array.isArray(input.questions) || input.questions.length === 0) {
 		return undefined;
 	}
+	// Optional: sessions persisted before `context` existed still parse.
+	if (input.context !== undefined && typeof input.context !== "string") return undefined;
 	const questions: QuestionParams["questions"] = [];
 	for (const rawQuestion of input.questions) {
 		const question = record(rawQuestion);
@@ -98,7 +100,9 @@ export function parseQuestionParams(value: unknown): QuestionParams | undefined 
 		}
 		questions.push({ question: question.question, options });
 	}
-	return { questions };
+	return input.context === undefined
+		? { questions }
+		: { context: input.context as string, questions };
 }
 
 function parseQuestionDetails(value: unknown): QuestionDetails | undefined {
@@ -161,12 +165,10 @@ export function parseQuestionToolResult(value: unknown): QuestionToolResult | un
 }
 
 export function formatRecoveredUserMessage(result: QuestionToolResult): string {
-	if (result.details.skipped) {
-		return "Recovered question skipped by the user (they responded in chat instead).";
-	}
-	return result.details.cancelled
-		? "Recovered question cancelled by user."
-		: `Recovered question response:\n${result.content[0].text}`;
+	// Not "after restart": the before_agent_start gate (index.ts) also opens a
+	// dangling question after branch navigation. The result text already says
+	// answered, skipped or interrupted.
+	return `Late answer to your earlier pending question:\n${result.content[0].text}`;
 }
 
 export function createQuestionRecovery(

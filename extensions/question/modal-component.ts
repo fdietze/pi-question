@@ -282,6 +282,12 @@ export function createQuestionModalComponent(
     lines.push(
       truncateToWidth(theme.fg("accent", "─".repeat(width)), width),
     );
+    // The agent's background for the user, so the batch is answerable without
+    // the chat (background batches are often answered much later).
+    if (params.context) {
+      addWrapped(lines, width, params.context, " ", (t) => theme.fg("muted", t));
+      lines.push("");
+    }
 
     if (multi) {
       // Count banner.

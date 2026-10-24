@@ -30,7 +30,7 @@ Blocking recovery remains `question-recovery-v1` through `recovery.ts`. Backgrou
 ## External interfaces
 
 - Pi package entry: `extensions/question/index.ts`
-- Tool: `question` (multi-select questions, shared note, optional `blocking` defaulting to `true`; at most one blocking call plus multiple background batches)
+- Tool: `question` (optional `context`, multi-select questions with one note each, optional `blocking` defaulting to `true`; at most one blocking call plus multiple background batches)
 - Command: `/question` (open a pending batch or select among several)
 - Persistence types: `question-recovery-v1` for blocking recovery; `question-background-v1` for pending and answered background records
 - Answer custom message: `question-answer`, correlated by requestId, toolCallId and answerId; `question-answer-discarded` is an inert wrong-branch tombstone

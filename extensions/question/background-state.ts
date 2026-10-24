@@ -1,6 +1,6 @@
 // Functional Core: the active raw branch is the authority for durable background
 // requests and their outbox, even when compaction removes them from model context.
-import { type QuestionParams, type QuestionToolResult } from "./core.ts";
+import { formatSelection, type QuestionParams, type QuestionToolResult } from "./core.ts";
 import { isReplayableAssistant, parseQuestionParams, parseQuestionToolResult } from "./recovery.ts";
 
 export const BACKGROUND_ENTRY_TYPE = "question-background-v1";
@@ -72,14 +72,23 @@ export function isAssociatedAnswer(message: unknown, batches: ReadonlyMap<string
 }
 
 export function queuedQuestionResult() {
-  return { content: [{ type: "text" as const, text: "Question queued and open for the user; the answer will arrive in a separate message." }], details: undefined };
+  return { content: [{ type: "text" as const, text: "Queued for the user. Keep working without the answer; it arrives later as a separate message." }], details: undefined };
 }
 
+// The answer repeats the offered options because compaction may have removed
+// the original tool call from the agent's context by the time it arrives.
 export function formatBackgroundAnswer(batch: BackgroundBatch): string {
-  const result = batch.answered!.result;
-  const context = batch.pending.params.questions.map((q, i) =>
-    `${i + 1}. ${q.question}\nOptions: ${q.options.map((o) => o.label).join("; ")}`).join("\n");
-  return `Question response:\n${context}\n\nSelected answers and note:\n${result.content[0].text}`;
+  const { questions, answers, notes } = batch.answered!.result.details;
+  const lines = ["The user answered your background question."];
+  questions.forEach((q, i) => {
+    const picks = (answers[i] ?? []).map((label) => `${q.options.indexOf(label) + 1}. ${label}`);
+    lines.push(
+      `Q${i + 1} "${q.question}"`,
+      `  offered: ${q.options.map((label, j) => `${j + 1}. ${label}`).join("; ")}`,
+      `  selected: ${formatSelection(picks, notes[i] ?? null)}`,
+    );
+  });
+  return lines.join("\n");
 }
 
 // Repair only missing receipts. A completed tool result remains authoritative;

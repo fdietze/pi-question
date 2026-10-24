@@ -11,6 +11,8 @@ export interface QuestionOption {
 }
 
 export interface QuestionParams {
+	/** Background for the user, shown above the questions; never echoed in results. */
+	context?: string;
 	questions: { question: string; options: QuestionOption[] }[];
 }
 
@@ -39,8 +41,15 @@ export type QuestionModalOutcome =
 	| { kind: "cancelled" }
 	| { kind: "skipped" };
 
+// The chat message after a skip is not always a reply to the form: a recovered
+// question can open while the user submits an unrelated message (index.ts
+// before_agent_start gate), so the text asks the agent to read, not to assume.
 export const SKIPPED_RESULT_TEXT =
-	"User skipped the selection and responded in chat instead.";
+	"Not answered: the user skipped the form and continued in chat. Read their next message.";
+
+// Cancellation only comes from aborts and session teardown, never from a user
+// gesture in the dock (Esc minimizes or skips), see modal.ts cancel().
+export const CANCELLED_RESULT_TEXT = "Not answered: the run was interrupted.";
 
 export interface QuestionToolResult {
 	content: [{ type: "text"; text: string }];
@@ -82,12 +91,17 @@ export function formatBatchResult(
 		const note = trimmed.length > 0 ? trimmed : null;
 		outNotes.push(note);
 		const prefix = multi ? `Q${q + 1} ` : "";
-		const selStr = parts.length ? parts.join(", ") : "(no selection)";
-		const noteStr = note !== null ? ` | note: ${note}` : "";
-		lines.push(`${prefix}"${questions[q].question}": ${selStr}${noteStr}`);
+		lines.push(`${prefix}"${questions[q].question}": ${formatSelection(parts, note)}`);
 	}
-	const content = lines.length > 0 ? lines.join("\n") : "User submitted empty answer";
-	return { answers, notes: outNotes, content };
+	return { answers, notes: outNotes, content: lines.join("\n") };
+}
+
+/** One question's answer as the agent reads it: numbered picks plus the note.
+ * Shared by blocking results and background answers (background-state.ts) so
+ * both read the same (DRY). */
+export function formatSelection(parts: string[], note: string | null): string {
+	const selStr = parts.length ? parts.join(", ") : "(no selection)";
+	return note !== null ? `${selStr} | note: ${note}` : selStr;
 }
 
 // Rows are: option rows 0..optionCount-1, then the note row at index optionCount.
@@ -103,7 +117,7 @@ export function formatQuestionResult(
 	}));
 	if (outcome.kind === "cancelled") {
 		return {
-			content: [{ type: "text", text: "User cancelled the selection" }],
+			content: [{ type: "text", text: CANCELLED_RESULT_TEXT }],
 			details: {
 				questions,
 				answers: [],
@@ -150,7 +164,7 @@ export function formatBusyQuestionResult(): {
 		content: [
 			{
 				type: "text",
-				text: "Another question is already pending. Answer, minimize or skip it before asking another.",
+				text: "Not asked: another blocking question is still open. Ask again after it is answered, or set blocking:false.",
 			},
 		],
 	};

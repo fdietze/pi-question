@@ -1,6 +1,6 @@
 # pi-question
 
-A [pi](https://pi.dev/) extension that lets the agent ask the user structured questions instead of free-form text. The `question` tool renders multi-select checkbox questions in a terminal dock with an optional shared note. Calls wait for the answer by default; `blocking: false` lets the agent continue and receive the answer later as a message.
+A [pi](https://pi.dev/) extension that lets the agent ask the user structured questions instead of free-form text. The `question` tool renders multi-select checkbox questions in a terminal dock, each with an optional free-text note. Calls wait for the answer by default; `blocking: false` lets the agent continue and receive the answer later as a message.
 
 ## Install
 
@@ -10,7 +10,7 @@ pi install git:github.com/fdietze/pi-question
 
 ## Interface
 
-The agent receives the `question` tool: one or more questions per call, each with options (optional short `tag` badge, e.g. "recommended"), answered together with one shared free-form note.
+The agent receives the `question` tool: an optional `context` shown above the questions, and one or more questions per call, each with options (optional short `tag` badge, e.g. "recommended") and its own free-text note. The user answers all questions of a call together.
 
 - `blocking` omitted or `true`: wait for a tool result. Only one blocking call may be pending; another blocking call is rejected.
 - `blocking: false`: store and immediately display the questions, then return an acknowledgement. Multiple background batches may accumulate alongside a blocking call. Each answer arrives as a `question-answer` custom message associated with its original call.

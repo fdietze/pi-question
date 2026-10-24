@@ -80,7 +80,7 @@ test("formatQuestionResult: cancellation matches normal tool execution", () => {
 		questions: [{ question: "Ship it?", options: [{ label: "Yes" }] }],
 	};
 	assert.deepEqual(formatQuestionResult(params, { kind: "cancelled" }), {
-		content: [{ type: "text", text: "User cancelled the selection" }],
+		content: [{ type: "text", text: "Not answered: the run was interrupted." }],
 		details: {
 			questions: [{ question: "Ship it?", options: ["Yes"] }],
 			answers: [],
@@ -115,7 +115,7 @@ test("formatBusyQuestionResult: explicit rejection text, details undefined", () 
 	const result = formatBusyQuestionResult();
 	assert.equal(result.content.length, 1);
 	assert.equal(result.content[0].type, "text");
-	assert.match(result.content[0].text, /already pending/);
+	assert.match(result.content[0].text, /another blocking question is still open/);
 	// `details` must be present (AgentToolResult.details is a required property)
 	// but stays undefined, so renderResult falls back to the plain text instead
 	// of an answer summary over empty selections.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { formatQuestionResult, shouldSettleModalOnShutdown } from "./core.ts";
+import { CANCELLED_RESULT_TEXT, formatQuestionResult, shouldSettleModalOnShutdown, SKIPPED_RESULT_TEXT } from "./core.ts";
 import {
 	createQuestionRecovery,
 	findLatestDanglingQuestionCall,
@@ -591,21 +591,28 @@ test("gate-opened modal skipped by Esc: marker persists, gate no-ops, turn proce
 	assert.equal(recovery.result.details.skipped, true);
 });
 
-test("recovered user messages distinguish answers from cancellation and skip", () => {
+test("recovered user messages carry the result text under one prefix", () => {
+	const prefix = "Late answer to your earlier pending question:\n";
 	assert.equal(
 		formatRecoveredUserMessage(answeredResult),
-		'Recovered question response:\n"Ship it?": 1. Yes',
+		`${prefix}"Ship it?": 1. Yes`,
 	);
 	assert.equal(
 		formatRecoveredUserMessage(
 			formatQuestionResult(params, { kind: "cancelled" }),
 		),
-		"Recovered question cancelled by user.",
+		`${prefix}${CANCELLED_RESULT_TEXT}`,
 	);
 	assert.equal(
 		formatRecoveredUserMessage(skippedResult),
-		"Recovered question skipped by the user (they responded in chat instead).",
+		`${prefix}${SKIPPED_RESULT_TEXT}`,
 	);
+});
+
+test("parseQuestionParams keeps optional context and accepts params without it", () => {
+	assert.deepEqual(parseQuestionParams({ ...params, context: "Why" }), { ...params, context: "Why" });
+	assert.deepEqual(parseQuestionParams(params), params);
+	assert.equal(parseQuestionParams({ ...params, context: 1 }), undefined);
 });
 
 test("skipped recoveries round-trip through persisted entries", () => {

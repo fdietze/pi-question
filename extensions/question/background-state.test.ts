@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { formatQuestionResult } from "./core.ts";
 import { BACKGROUND_ENTRY_TYPE, ANSWER_MESSAGE_TYPE, loadBackgroundBatches,
-  isAssociatedAnswer, repairBackgroundReceipts, type BackgroundPending } from "./background-state.ts";
+  isAssociatedAnswer, repairBackgroundReceipts, formatBackgroundAnswer, type BackgroundPending } from "./background-state.ts";
 import { findLatestDanglingQuestionCall, selectRecoveryGate } from "./recovery.ts";
 
 const params = { questions: [{ question: "Ship?", options: [{ label: "Yes" }] }] };
@@ -39,7 +39,7 @@ test("missing ack is repaired without replacing completed results", () => {
   const assistant = { role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", id: "call", name: "question" }] };
   const repaired = repairBackgroundReceipts([assistant], batches.values());
   assert.equal(repaired.length, 2);
-  assert.match((repaired[1] as {content: {text:string}[]}).content[0].text, /queued/);
+  assert.match((repaired[1] as {content: {text:string}[]}).content[0].text, /Queued/);
   const completed = { role: "toolResult", toolCallId: "call", content: [{ type: "text", text: "original" }] };
   assert.deepEqual(repairBackgroundReceipts([assistant, completed], batches.values()), [assistant, completed]);
 });
@@ -48,4 +48,14 @@ test("blocking recovery skips explicit async calls before any ledger exists and 
   const entries = [{ type: "message", message: { role: "assistant", stopReason: "toolUse", content: [call("blocking", params), call("async", { ...params, blocking: false })] } }];
   assert.equal(findLatestDanglingQuestionCall(entries, new Set())?.toolCallId, "blocking");
   assert.equal(selectRecoveryGate(entries, new Map(), "tui", new Set(["blocking"])), undefined);
+});
+test("background answer repeats offered options and numbers picks by offered position", () => {
+  const two = { questions: [{ question: "Ship?", options: [{ label: "Yes" }, { label: "No" }] }, { question: "When?", options: [{ label: "Now" }] }] };
+  const twoResult = formatQuestionResult(two, { kind: "answered", answer: { answers: [["No"], []], notes: [null, "later"], content: "" } });
+  const batch = loadBackgroundBatches([entry({ ...pending, params: two }), entry({ ...answered, result: twoResult })]).get("request")!;
+  assert.equal(formatBackgroundAnswer(batch), [
+    "The user answered your background question.",
+    'Q1 "Ship?"', "  offered: 1. Yes; 2. No", "  selected: 2. No",
+    'Q2 "When?"', "  offered: 1. Now", "  selected: (no selection) | note: later",
+  ].join("\n"));
 });

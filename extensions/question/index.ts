@@ -44,15 +44,17 @@ interface OptionWithDesc {
   tagColor?: TagColor;
 }
 
+// Agent-facing wording: each fact lives in exactly one description (DRY), so
+// the tool description says when to ask and the parameters say how it works.
 const OptionSchema = Type.Object({
-  label: Type.String({ description: "Display label for the option" }),
+  label: Type.String({ description: "Short option text." }),
   description: Type.Optional(
-    Type.String({ description: "Optional description shown below label" }),
+    Type.String({ description: "Detail shown below the label." }),
   ),
   tag: Type.Optional(
     Type.String({
       description:
-        'Short one-word badge shown before the label, e.g. "recommended". Use to flag a preferred option; list tagged options first.',
+        'One-word badge shown before the label, e.g. "recommended" or "risky".',
     }),
   ),
   tagColor: Type.Optional(
@@ -66,26 +68,35 @@ const OptionSchema = Type.Object({
       ],
       {
         description:
-          'Semantic color of the `tag` pill (default "accent"): success = safe/green, warning = caution/yellow, error = danger/red, muted = low-priority/grey.',
+          'Badge color (default "accent"): success = safe, warning = caution, error = danger, muted = low priority.',
       },
     ),
   ),
 });
 
 const QuestionSchema = Type.Object({
-  question: Type.String({ description: "The question to ask the user" }),
+  question: Type.String({
+    description: "The question. Keep it short; put shared background in context.",
+  }),
   options: Type.Array(OptionSchema, {
-    description: "Options for the user to choose from",
+    // The Enter default is the focused option, which starts on the first one
+    // (modal-component.ts), so the recommendation must come first.
+    description:
+      'Choices for this question. When you have a recommendation, put it first and tag it "recommended": the first option is the default when the user just presses Enter.',
   }),
 });
 
 const QuestionParamsSchema = Type.Object({
+  context: Type.Optional(Type.String({
+    description: "What you are working on and why you ask, in 1-3 sentences. Shown above the questions.",
+  })),
   blocking: Type.Optional(Type.Boolean({
-    description: "Wait for the answer (default true). Set false to queue a durable question and continue working; the answer arrives later as a separate message.",
+    description: "true (default): wait for the answer. false: queue the questions and keep working; the answer arrives later as a separate message.",
   })),
   questions: Type.Array(QuestionSchema, {
+    minItems: 1,
     description:
-      "One or more questions to ask at once. Batch several independent clarifications into a single call to gather more per round-trip. Each question is its own multi-select list; the user answers them all together with one shared free-form note.",
+      'Questions whose answers do not depend on each other; the user answers them together. Each question is multi-select; write "pick one" in the question when only one answer fits. Each question has its own free-text note for the user.',
   }),
 });
 
@@ -495,7 +506,7 @@ export default function question(pi: ExtensionAPI) {
     name: "question",
     label: "Question",
     description:
-      "Ask the user one or more questions whenever you need their input. Prefer this over asking in plain text. Include an executive summary, assuming the user did not read the whole conversation. Prefer orthogonal questions and options. Pass several questions at once to gather more information per round-trip; each is multi-select checkboxes and the batch shares one free-form note. When you have a recommendation, tag the recommended option(s) and list them first. Set blocking:false for optional input so you can continue working while the user answers later.",
+      "Ask the user to decide or clarify something you need to continue well. Use plain text for reports, status updates and open-ended discussion. Put all questions of one round into one call. Make at most one blocking call at a time. Write context, questions and options so the user can answer without reading the chat. Set blocking:false when you can keep working without the answer.",
     parameters: QuestionParamsSchema,
 
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
