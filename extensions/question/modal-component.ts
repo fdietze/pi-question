@@ -106,16 +106,13 @@ export function createQuestionModalComponent(
     });
   }
 
-  // Move the active question by dir (±1), wrapping around. Keep the cursor on
-  // the note row if it was there; otherwise clamp it into the new question's
-  // option range so it never points past the shorter list.
+  // Move the active question by dir (±1), wrapping around. The cursor starts
+  // on the new question's first option, like after Enter: a cursor row from
+  // another question's list carries no meaning here.
   function switchQuestion(dir: number) {
     const n = questions.length;
-    const wasNote = isNoteRow(draft.selectedRow, optCount());
     draft.activeQuestion = (draft.activeQuestion + dir + n) % n;
-    draft.selectedRow = wasNote
-      ? optCount()
-      : clampCursor(draft.selectedRow, optCount());
+    draft.selectedRow = 0;
     refresh();
   }
 

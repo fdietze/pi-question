@@ -270,3 +270,17 @@ test("Pi clearQueue drops custom steers; persisted answers retry next run and su
   assert.deepEqual(h.emit("context", { messages: [first, duplicate.message] }).messages, [first]);
   h.emit("session_shutdown", { reason: "reload" });
 });
+
+test("Tab starts the cursor on the first option of the next question", async () => {
+  const h = harness();
+  const options = [{ label: "Yes" }, { label: "No" }];
+  const pending = h.execute("tab", { questions: [{ question: "One?", options }, { question: "Two?", options }] });
+  await flush();
+  h.key("\x1b[B"); // down: cursor on "No" of the first question
+  h.key("\t");
+  h.key(" "); // toggles the focused option of the second question
+  h.key("\r"); // submit (second question is last)
+  const result = await pending;
+  assert.match(result.content[0].text, /Two\?[\s\S]*Yes/);
+  assert.doesNotMatch(result.content[0].text, /Two\?[\s\S]*No/);
+});
