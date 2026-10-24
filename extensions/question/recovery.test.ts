@@ -592,7 +592,7 @@ test("gate-opened modal skipped by Esc: marker persists, gate no-ops, turn proce
 });
 
 test("recovered user messages carry the result text under one prefix", () => {
-	const prefix = "Late answer to your earlier pending question:\n";
+	const prefix = "Result of your earlier pending question:\n";
 	assert.equal(
 		formatRecoveredUserMessage(answeredResult),
 		`${prefix}"Ship it?": 1. Yes`,

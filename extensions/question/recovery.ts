@@ -168,7 +168,7 @@ export function formatRecoveredUserMessage(result: QuestionToolResult): string {
 	// Not "after restart": the before_agent_start gate (index.ts) also opens a
 	// dangling question after branch navigation. The result text already says
 	// answered, skipped or interrupted.
-	return `Late answer to your earlier pending question:\n${result.content[0].text}`;
+	return `Result of your earlier pending question:\n${result.content[0].text}`;
 }
 
 export function createQuestionRecovery(

@@ -41,11 +41,12 @@ export type QuestionModalOutcome =
 	| { kind: "cancelled" }
 	| { kind: "skipped" };
 
-// The chat message after a skip is not always a reply to the form: a recovered
-// question can open while the user submits an unrelated message (index.ts
-// before_agent_start gate), so the text asks the agent to read, not to assume.
+// The chat message is not always a reply to the form: a recovered question can
+// open while the user submits an unrelated message (index.ts before_agent_start
+// gate). It is also not always the next message: startup redelivery appends
+// this text after it. So the text asks the agent to read, not to assume.
 export const SKIPPED_RESULT_TEXT =
-	"Not answered: the user skipped the form and continued in chat. Read their next message.";
+	"Not answered: the user skipped the form and continued in chat. Read their chat message.";
 
 // Cancellation only comes from aborts and session teardown, never from a user
 // gesture in the dock (Esc minimizes or skips), see modal.ts cancel().
@@ -164,7 +165,7 @@ export function formatBusyQuestionResult(): {
 		content: [
 			{
 				type: "text",
-				text: "Not asked: another blocking question is still open. Ask again after it is answered, or set blocking:false.",
+				text: "Not asked: another blocking question is still open. Ask again after it is answered.",
 			},
 		],
 	};
