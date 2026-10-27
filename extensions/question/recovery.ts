@@ -113,7 +113,8 @@ function parseQuestionDetails(value: unknown): QuestionDetails | undefined {
 		!Array.isArray(details.answers) ||
 		!Array.isArray(details.notes) ||
 		typeof details.cancelled !== "boolean" ||
-		(details.skipped !== undefined && typeof details.skipped !== "boolean")
+		(details.skipped !== undefined && typeof details.skipped !== "boolean") ||
+		(details.dismissed !== undefined && typeof details.dismissed !== "boolean")
 	) {
 		return undefined;
 	}
@@ -148,6 +149,9 @@ function parseQuestionDetails(value: unknown): QuestionDetails | undefined {
 		notes: [...details.notes] as (string | null)[],
 		cancelled: details.cancelled,
 		...(details.skipped === undefined ? {} : { skipped: details.skipped }),
+		// Recovered and background questions can be dismissed; only live blocking
+		// calls are backgrounded, and their results are never parsed here.
+		...(details.dismissed === undefined ? {} : { dismissed: details.dismissed }),
 	};
 }
 
@@ -167,7 +171,7 @@ export function parseQuestionToolResult(value: unknown): QuestionToolResult | un
 export function formatRecoveredUserMessage(result: QuestionToolResult): string {
 	// Not "after restart": the before_agent_start gate (index.ts) also opens a
 	// dangling question after branch navigation. The result text already says
-	// answered, skipped or interrupted.
+	// answered, skipped, dismissed or interrupted.
 	return `Result of your earlier pending question:\n${result.content[0].text}`;
 }
 
@@ -564,7 +568,10 @@ export function selectStartupRecovery(
 	const modal = selectRecoveryModal(contextEntries, recoveries, excludedIds);
 	if (modal) return modal;
 	const pending = [...recoveries.values()]
-		.filter((recovery) => !isRecoveryContinuationComplete(branchEntries, recovery))
+		// A dismissal never wakes the agent; context repair still shows it the
+		// dismissed result on its next turn.
+		.filter((recovery) => !recovery.record.result.details.dismissed &&
+			!isRecoveryContinuationComplete(branchEntries, recovery))
 		.at(-1);
 	return pending ? { kind: "redeliver", recovery: pending } : { kind: "none" };
 }

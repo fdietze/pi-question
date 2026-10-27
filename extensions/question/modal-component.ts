@@ -5,6 +5,8 @@ import {
   Editor,
   type Component,
   type EditorTheme,
+  type TuiMouseEvent,
+  type TuiMouseEventResult,
   Key,
   matchesKey,
   truncateToWidth,
@@ -23,6 +25,7 @@ import {
 export interface QuestionModalActions {
   minimize(): void;
   skip(): void;
+  dismiss(): void;
 }
 
 export interface QuestionModalDraft {
@@ -89,6 +92,17 @@ export function createQuestionModalComponent(
 
   const optCount = () => questions[draft.activeQuestion].options.length;
 
+  // Esc never cancels: it minimizes, or resolves a non-minimizable
+  // (gate-opened) modal as skipped. See escapeAction() for why.
+  const escape = escapeAction(minimizable);
+  const runEscape = escape === "minimize" ? actions.minimize : actions.skip;
+  // Header actions, keyboard first: each label names its key and is also a
+  // click target (headerLayout).
+  const headerActions = [
+    { label: "ctrl+c dismiss", run: actions.dismiss },
+    { label: `esc ${escape}`, run: runEscape },
+  ];
+
   function refresh() {
     cachedLines = undefined;
     tui.requestRender();
@@ -138,11 +152,15 @@ export function createQuestionModalComponent(
       }
       return;
     }
-    // Esc never cancels: it minimizes, or resolves a non-minimizable
-    // (gate-opened) modal as skipped. See escapeAction() for why.
     if (matchesKey(data, Key.escape)) {
-      if (escapeAction(minimizable) === "minimize") actions.minimize();
-      else actions.skip();
+      runEscape();
+      return;
+    }
+    // Ctrl+C is the Unix and pi convention for "abandon this prompt" (pi's
+    // tui.select.cancel and app.clear). Intercepted before note handling so it
+    // works while editing the note.
+    if (matchesKey(data, Key.ctrl("c"))) {
+      actions.dismiss();
       return;
     }
     // Tab / Shift+Tab switch the active question (options swap). Intercepted
@@ -276,12 +294,55 @@ export function createQuestionModalComponent(
     }
   }
 
+  // Header action columns for a width: one pure layout shared by rendering
+  // and mouse hit-testing, so both always agree (DRY). Too narrow a dock gets
+  // no targets and a plain border: the keys still work.
+  function headerLayout(width: number) {
+    const separator = " · ";
+    const labelsWidth =
+      headerActions.reduce((sum, a) => sum + visibleWidth(a.label), 0) +
+      separator.length * (headerActions.length - 1);
+    // 3 = a space on each side of the labels plus one trailing border cell.
+    const lead = width - labelsWidth - 3;
+    if (lead < 1) return { lead: width, separator, targets: [] };
+    let x = lead + 1;
+    const targets = headerActions.map((action, i) => {
+      if (i > 0) x += separator.length;
+      const from = x;
+      x += visibleWidth(action.label);
+      return { ...action, from, to: x };
+    });
+    return { lead, separator, targets };
+  }
+
+  function renderHeader(width: number): string {
+    const { lead, separator, targets } = headerLayout(width);
+    const border = theme.fg("accent", "─".repeat(lead));
+    if (targets.length === 0) return border;
+    const labels = targets
+      .map((t) => theme.fg("muted", t.label))
+      .join(theme.fg("dim", separator));
+    return `${border} ${labels} ${theme.fg("accent", "─")}`;
+  }
+
+  // Header clicks (pi fullscreen mode only). A press claims the gesture so pi
+  // routes the matching click here; the click runs the action.
+  function handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    if (event.y !== 0 || event.button !== "left") return undefined;
+    const target = headerLayout(event.width).targets.find(
+      (t) => event.x >= t.from && event.x < t.to,
+    );
+    if (!target) return undefined;
+    if (event.type === "click") target.run();
+    return event.type === "press" || event.type === "click"
+      ? { handled: true }
+      : undefined;
+  }
+
   function render(width: number): string[] {
     if (cachedLines && cachedWidth === width) return cachedLines;
     const lines: string[] = [];
-    lines.push(
-      truncateToWidth(theme.fg("accent", "─".repeat(width)), width),
-    );
+    lines.push(truncateToWidth(renderHeader(width), width));
     // The agent's background for the user, so the batch is answerable without
     // the chat (background batches are often answered much later).
     if (params.context) {
@@ -360,8 +421,8 @@ export function createQuestionModalComponent(
     // otherwise it advances to the next.
     const onLast = draft.activeQuestion === questions.length - 1;
     const hint = multi
-      ? ` Tab switch • ↑↓ move • Space toggle • Enter ${onLast ? "submit" : "next"} • Esc minimize`
-      : " ↑↓ move • Space toggle • type → note • Enter submit • Esc minimize";
+      ? ` Tab switch • ↑↓ move • Space toggle • Enter ${onLast ? "submit" : "next"}`
+      : " ↑↓ move • Space toggle • type → note • Enter submit";
     lines.push(truncateToWidth(theme.fg("dim", hint), width));
     lines.push(
       truncateToWidth(theme.fg("accent", "─".repeat(width)), width),
@@ -378,5 +439,6 @@ export function createQuestionModalComponent(
       cachedLines = undefined;
     },
     handleInput,
+    handleMouse,
   };
 }

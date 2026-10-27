@@ -670,3 +670,16 @@ test("skip ordering: durable marker precedes the submitted chat message and clos
 	const synthetic = repaired[1] as { content: { text: string }[] };
 	assert.equal(synthetic.content[0].text, skippedResult.content[0].text);
 });
+
+test("dismissed recoveries round-trip and are never redelivered", () => {
+	const dismissed = formatQuestionResult(params, { kind: "dismissed" });
+	const recovery = createQuestionRecovery("question-dismissed", dismissed, 1234);
+	const branch = [
+		assistantEntry("question-dismissed-assistant", [call("question-dismissed")]),
+		recoveryEntry("question-dismissed-marker", recovery),
+	];
+	const recoveries = loadQuestionRecoveries(branch);
+	assert.equal(recoveries.get("question-dismissed")?.record.result.details.dismissed, true);
+	// No continuation was ever sent, yet startup must not wake the agent.
+	assert.deepEqual(selectStartupRecovery(branch, branch, recoveries), { kind: "none" });
+});

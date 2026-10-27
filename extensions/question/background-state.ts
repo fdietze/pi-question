@@ -15,6 +15,7 @@ export type BackgroundPending = {
   params: QuestionParams;
   createdAt: number;
 };
+/** The user's final response: answered, or dismissed via result.details.dismissed. */
 export type BackgroundAnswered = {
   version: 1;
   kind: "answered";
@@ -78,7 +79,11 @@ export function queuedQuestionResult() {
 // The answer repeats the offered options because compaction may have removed
 // the original tool call from the agent's context by the time it arrives.
 export function formatBackgroundAnswer(batch: BackgroundBatch): string {
-  const { questions, answers, notes } = batch.answered!.result.details;
+  const { questions, answers, notes, dismissed } = batch.answered!.result.details;
+  if (dismissed) {
+    return ["The user dismissed your background question.",
+      ...questions.map((q, i) => `Q${i + 1} "${q.question}"`)].join("\n");
+  }
   const lines = ["The user answered your background question."];
   questions.forEach((q, i) => {
     const picks = (answers[i] ?? []).map((label) => `${q.options.indexOf(label) + 1}. ${label}`);

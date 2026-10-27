@@ -15,7 +15,7 @@ import {
 } from "./background-state.ts";
 import {
   formatBusyQuestionResult,
-  isSkipEligibleInput,
+  isChatYieldInput,
   shouldSettleModalOnShutdown,
   type QuestionDetails,
   type TagColor,
@@ -111,7 +111,12 @@ interface ActiveQuestion {
    */
   suppressContinuation(): void;
   /**
-   * Durability boundary for an external skip. Live: resolves once the tool
+   * The user sent a chat message while this question was minimized. Live:
+   * the question moves to a background batch. Recovery: it is skipped.
+   */
+  yieldToChat(): void;
+  /**
+   * Durability boundary for yielding to chat. Live: resolves once the tool
    * execute call returned (its tool result is produced). Recovery: resolves
    * once the recovery operation finished (marker appended or failure
    * reported).
@@ -146,7 +151,7 @@ export default function question(pi: ExtensionAPI) {
       ctx.ui.setWidget(PENDING_WIDGET_KEY, undefined);
       return;
     }
-    const text = `? ${count} question batch${count === 1 ? "" : "es"} pending · /question to answer${active?.controller.state() === "minimized" ? " · sending a message skips the blocking batch" : ""}`;
+    const text = `? ${count} question batch${count === 1 ? "" : "es"} pending · /question to answer${active?.controller.state() === "minimized" ? " · chatting moves the blocking one to background" : ""}`;
     ctx.ui.setWidget(PENDING_WIDGET_KEY, (_tui, theme) => ({
       render: (width: number) => [truncateToWidth(theme.fg("accent", text), width)],
       invalidate: () => {},
@@ -202,6 +207,12 @@ export default function question(pi: ExtensionAPI) {
           suppressContinuation: () => {
             openingShouldSendContinuation = false;
           },
+          // Recovered results live in question-recovery-v1 records; skipping
+          // keeps them out of the background ledger (YAGNI: rare path).
+          yieldToChat: () => {
+            openingShouldSendContinuation = false;
+            opened.controller.skip();
+          },
           finished: recoveryFinished,
         };
         updatePendingWidget(ctx);
@@ -238,7 +249,8 @@ export default function question(pi: ExtensionAPI) {
         // idle recovery creates its continuation turn.
         pi.appendEntry(QUESTION_RECOVERY_ENTRY_TYPE, recovery);
         recoveries.set(recovery.toolCallId, recovery);
-        if (openingShouldSendContinuation) {
+        // A dismissal never wakes the agent (see selectStartupRecovery).
+        if (openingShouldSendContinuation && !result.details.dismissed) {
           pi.sendUserMessage(recovery.userMessage);
         }
       } catch (error) {
@@ -329,14 +341,15 @@ export default function question(pi: ExtensionAPI) {
     ctx.ui.setWidget(PENDING_WIDGET_KEY, undefined);
   });
 
-  // A normal chat submission while the active question is minimized resolves it
-  // as skipped and then flows through unchanged. The handler returns nothing,
-  // so pi queues/steers the original text exactly as if no question existed.
+  // A normal chat submission while the active question is minimized yields the
+  // question to the chat (see ActiveQuestion.yieldToChat) and then flows through
+  // unchanged. The handler returns nothing, so pi queues/steers the original
+  // text exactly as if no question existed.
   pi.on("input", async (event) => {
     const current = active;
     if (!current) return;
     if (
-      !isSkipEligibleInput({
+      !isChatYieldInput({
         minimized: current.controller.state() === "minimized",
         source: event.source,
         text: event.text,
@@ -344,8 +357,7 @@ export default function question(pi: ExtensionAPI) {
     ) {
       return;
     }
-    current.suppressContinuation();
-    current.controller.skip();
+    current.yieldToChat();
     // Await the durability boundary before letting the message flow: live —
     // the tool result exists; recovery — the marker entry is appended. Pinned
     // pi queues the steer only after input handlers return, and agent-core
@@ -553,9 +565,16 @@ export default function question(pi: ExtensionAPI) {
       active = {
         controller: session.controller,
         // Live tool calls need no continuation suppression: the agent core
-        // persists the real tool result, and the skipped outcome already tells
-        // the agent the user answered in chat.
+        // persists the real tool result.
         suppressContinuation: () => {},
+        // The pending record is appended synchronously here, while the tool
+        // result only exists after the completion promise resumes execute, so
+        // the durable request always precedes its acknowledgement.
+        yieldToChat: () => {
+          if (session.controller.background()) {
+            backgrounds.adopt(toolCallId, params, session.draft, ctx);
+          }
+        },
         finished,
       };
       updatePendingWidget(ctx);
@@ -603,6 +622,16 @@ export default function question(pi: ExtensionAPI) {
       }
       if (details.cancelled) {
         return new Text(theme.fg("warning", "Cancelled"), 0, 0);
+      }
+      if (details.dismissed) {
+        return new Text(theme.fg("muted", "Dismissed"), 0, 0);
+      }
+      if (details.backgrounded) {
+        return new Text(
+          theme.fg("muted", "Moved to background — responded in chat"),
+          0,
+          0,
+        );
       }
       if (details.skipped) {
         // Distinct from answered and cancelled: the user minimized and answered

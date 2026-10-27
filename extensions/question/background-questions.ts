@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { QuestionParams } from "./core.ts";
 import { openQuestionModal, type QuestionModalController, type QuestionModalSession } from "./modal.ts";
+import type { QuestionModalDraft } from "./modal-component.ts";
 import {
   ANSWER_MESSAGE_TYPE, BACKGROUND_ENTRY_TYPE, formatBackgroundAnswer,
   loadBackgroundBatches, queuedQuestionResult, type BackgroundBatch,
@@ -17,6 +18,8 @@ export function createBackgroundQuestions(pi: ExtensionAPI, hooks: {
 }) {
   let batches = new Map<string, BackgroundBatch>();
   const sessions = new Map<string, QuestionModalSession>();
+  // Drafts carried over from backgrounded blocking calls until first shown.
+  const drafts = new Map<string, QuestionModalDraft>();
   const inFlight = new Set<string>();
   let selected: string | undefined;
   let epoch = 0;
@@ -35,11 +38,15 @@ export function createBackgroundQuestions(pi: ExtensionAPI, hooks: {
       if (!batch.answered || batch.delivered || inFlight.has(batch.answered.answerId)) continue;
       const answerId = batch.answered.answerId;
       inFlight.add(answerId);
+      // A dismissal informs the agent without waking it. pi >= 1.4 appends a
+      // non-triggering custom message at once when idle, or at the next turn
+      // boundary of a running agent, never between a tool call and its result.
+      const wake = !batch.answered.result.details.dismissed;
       try {
         pi.sendMessage({ customType: ANSWER_MESSAGE_TYPE, display: true,
           content: formatBackgroundAnswer(batch),
           details: { requestId: batch.pending.requestId, toolCallId: batch.pending.toolCallId, answerId },
-        }, { triggerTurn: true, deliverAs: "steer" });
+        }, wake ? { triggerTurn: true, deliverAs: "steer" } : { triggerTurn: false });
       } catch (error) {
         inFlight.delete(answerId);
         ctx.ui.notify(`Failed to deliver question answer: ${String(error)}`, "error");
@@ -58,13 +65,15 @@ export function createBackgroundQuestions(pi: ExtensionAPI, hooks: {
       const generation = epoch;
       session = openQuestionModal(ctx, batch.pending.params, {
         initiallyMinimized: true,
+        draft: drafts.get(requestId),
         onStateChange: () => hooks.changed(ctx),
       });
+      drafts.delete(requestId);
       sessions.set(requestId, session);
       const opened = session;
       void session.completion.then((run) => {
         if (stopped || generation !== epoch || sessions.get(requestId) !== opened) return;
-        if (run.outcome.kind !== "answered") return;
+        if (run.outcome.kind !== "answered" && run.outcome.kind !== "dismissed") return;
         // Inversion: recheck the raw branch before persistence, then persist the
         // answer before queuing delivery. A queue is not durable storage.
         const current = loadBackgroundBatches(ctx.sessionManager.getBranch()).get(requestId);
@@ -90,6 +99,15 @@ export function createBackgroundQuestions(pi: ExtensionAPI, hooks: {
     session.controller.expand();
     hooks.changed(ctx);
   };
+  // The single writer of pending records. Persistence is the acknowledgement
+  // boundary, not modal construction.
+  const persistPending = (toolCallId: string, params: QuestionParams) => {
+    const entry: BackgroundPending = { version: 1, kind: "pending", requestId: randomUUID(),
+      toolCallId, params, createdAt: Date.now() };
+    pi.appendEntry(BACKGROUND_ENTRY_TYPE, entry);
+    batches.set(entry.requestId, { pending: entry, delivered: false });
+    return entry.requestId;
+  };
   const autoShow = (ctx: ExtensionContext) => {
     if (shown() || hooks.picking()) return;
     const blocking = hooks.blocking();
@@ -107,14 +125,17 @@ export function createBackgroundQuestions(pi: ExtensionAPI, hooks: {
     batches: () => batches,
     callIds: () => new Set([...batches.values()].map((b) => b.pending.toolCallId)),
     queue(toolCallId: string, params: QuestionParams, ctx: ExtensionContext) {
-      const entry: BackgroundPending = { version: 1, kind: "pending", requestId: randomUUID(),
-        toolCallId, params, createdAt: Date.now() };
-      // Persistence is the acknowledgement boundary, not modal construction.
-      pi.appendEntry(BACKGROUND_ENTRY_TYPE, entry);
-      batches.set(entry.requestId, { pending: entry, delivered: false });
+      persistPending(toolCallId, params);
       autoShow(ctx);
       hooks.changed(ctx);
       return queuedQuestionResult();
+    },
+    // A blocking call the user moved aside by chatting. Persisted before the
+    // caller settles the blocking call, so the tool result never precedes its
+    // durable request. Not shown: the user just chose the chat over the form.
+    adopt(toolCallId: string, params: QuestionParams, draft: QuestionModalDraft, ctx: ExtensionContext) {
+      drafts.set(persistPending(toolCallId, params), draft);
+      hooks.changed(ctx);
     },
     park() {
       parked = shown() ? selected : undefined;
@@ -131,6 +152,7 @@ export function createBackgroundQuestions(pi: ExtensionAPI, hooks: {
       if (timer) clearTimeout(timer);
       minimize();
       sessions.clear();
+      drafts.clear();
       selected = undefined;
       parked = undefined;
       batches = loadBackgroundBatches(ctx.sessionManager.getBranch());

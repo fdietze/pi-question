@@ -81,6 +81,7 @@ function harness(initial: unknown[] = [], enqueue?: (message: any, options: any)
     execute: (id: string, value: any, signal = new AbortController().signal) => tool.execute(id, value, signal, undefined, ctx),
     emit: (name: string, value: any = {}) => events.get(name)?.(value, ctx),
     key: (key: string) => { assert.ok(current); current.component.handleInput?.(key); },
+    mouse: (event: any) => { assert.ok(current); return current.component.handleMouse?.({ button: "left", y: 0, width: 100, ...event }); },
     render: () => current?.component.render(100).join("\n"),
     choose: async (choice: string) => { picker = choice; await command.handler("", ctx); },
     reopen: () => command.handler("", ctx),
@@ -148,7 +149,7 @@ test("default blocking semantics and priority park and restore background draft"
   assert.match(h.render()!, /Blocking/);
   h.key("\x1b");
   await h.emit("input", { source: "interactive", text: "My answer" });
-  assert.equal((await blocking).details.skipped, true);
+  assert.equal((await blocking).details.backgrounded, true);
   assert.match(h.render()!, /Background/);
   assert.match(h.render()!, /saved note/);
   assert.equal(h.maxVisible(), 1);
@@ -294,4 +295,68 @@ test("context is shown above the questions and not echoed in the result", async 
   h.key("\r");
   const result = await pending;
   assert.doesNotMatch(result.content[0].text, /release day/);
+});
+
+test("chat while a live blocking question is minimized moves it, with its draft, to the background", async () => {
+  const h = harness();
+  const blocking = h.execute("blocking", params("Blocking?"));
+  await flush();
+  h.key("kept draft");
+  h.key("\x1b");
+  assert.match(h.widget()!, /chatting moves the blocking one to background/);
+  await h.emit("input", { source: "interactive", text: "Something else first" });
+  const result = await blocking;
+  assert.equal(result.details.backgrounded, true);
+  assert.match(result.content[0].text, /Moved to background/);
+  // Persisted under the original call, so recovery and receipt repair skip it.
+  const batch = [...loadBackgroundBatches(h.branch()).values()][0];
+  assert.equal(batch.pending.toolCallId, "blocking");
+  assert.equal(h.visible(), 0, "the user chose the chat; the form stays minimized");
+  await h.reopen();
+  assert.match(h.render()!, /kept draft/);
+  h.key("\r"); await flush();
+  assert.equal(h.sent.length, 1);
+  assert.match(h.sent[0].content, /answered[\s\S]*kept draft/);
+  h.emit("session_shutdown", { reason: "reload" });
+});
+
+test("Ctrl+C dismisses a blocking question", async () => {
+  const h = harness();
+  const blocking = h.execute("blocking", params("Blocking?"));
+  await flush();
+  h.key("note");
+  h.key("\x03");
+  const result = await blocking;
+  assert.equal(result.details.dismissed, true);
+  assert.match(result.content[0].text, /dismissed/);
+  assert.equal(h.visible(), 0);
+});
+
+test("background dismissal informs the agent without waking it", async () => {
+  const h = harness();
+  await h.execute("call", { ...params("Dismiss me?"), blocking: false });
+  h.key("\x03"); await flush();
+  assert.equal(h.sent.length, 1);
+  assert.deepEqual(h.sent[0].options, { triggerTurn: false });
+  assert.match(h.sent[0].content, /dismissed your background question[\s\S]*Dismiss me\?/);
+  assert.equal([...loadBackgroundBatches(h.branch()).values()][0].answered?.result.details.dismissed, true);
+  assert.equal(h.visible(), 0);
+  h.emit("session_shutdown", { reason: "reload" });
+});
+
+test("header actions name their keys and are clickable", async () => {
+  const h = harness();
+  const blocking = h.execute("blocking", params("Blocking?"));
+  await flush();
+  const header = h.render()!.split("\n")[0];
+  assert.match(header, /ctrl\+c dismiss · esc minimize ─$/);
+  assert.doesNotMatch(h.render()!, /Esc minimize/);
+  const at = (label: string) => header.indexOf(label);
+  assert.equal(h.mouse({ type: "press", x: 0 }), undefined, "the border is not a target");
+  assert.deepEqual(h.mouse({ type: "press", x: at("esc minimize") }), { handled: true });
+  h.mouse({ type: "click", x: at("esc minimize") });
+  assert.equal(h.visible(), 0);
+  await h.reopen();
+  h.mouse({ type: "click", x: at("ctrl+c dismiss") + 3 });
+  assert.equal((await blocking).details.dismissed, true);
 });

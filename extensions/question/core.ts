@@ -27,6 +27,10 @@ export type QuestionDetails = {
 	cancelled: boolean;
 	/** User minimized and answered in chat instead; distinct from `cancelled`. */
 	skipped?: boolean;
+	/** User continued in chat; the questions moved to a background batch. */
+	backgrounded?: boolean;
+	/** User deliberately discarded the questions (Ctrl+C in the dock). */
+	dismissed?: boolean;
 }
 
 export interface QuestionModalAnswer {
@@ -39,7 +43,9 @@ export interface QuestionModalAnswer {
 export type QuestionModalOutcome =
 	| { kind: "answered"; answer: QuestionModalAnswer }
 	| { kind: "cancelled" }
-	| { kind: "skipped" };
+	| { kind: "skipped" }
+	| { kind: "backgrounded" }
+	| { kind: "dismissed" };
 
 // The chat message is not always a reply to the form: a recovered question can
 // open while the user submits an unrelated message (index.ts before_agent_start
@@ -48,8 +54,15 @@ export type QuestionModalOutcome =
 export const SKIPPED_RESULT_TEXT =
 	"Not answered: the user skipped the form and continued in chat. Read their chat message.";
 
+// The chat message may already settle the questions, so the agent reads it
+// first; otherwise the background answer follows (background-questions.ts).
+export const BACKGROUNDED_RESULT_TEXT =
+	"Moved to background: the user continued in chat. Read their chat message. If it does not settle these questions, the answer arrives later as a separate message.";
+
+export const DISMISSED_RESULT_TEXT = "Not answered: the user dismissed the questions.";
+
 // Cancellation only comes from aborts and session teardown, never from a user
-// gesture in the dock (Esc minimizes or skips), see modal.ts cancel().
+// gesture in the dock (Esc minimizes or skips, Ctrl+C dismisses), see modal.ts cancel().
 export const CANCELLED_RESULT_TEXT = "Not answered: the run was interrupted.";
 
 export interface QuestionToolResult {
@@ -116,28 +129,22 @@ export function formatQuestionResult(
 		question: question.question,
 		options: question.options.map((option) => option.label),
 	}));
-	if (outcome.kind === "cancelled") {
+	if (outcome.kind !== "answered") {
+		// Every unanswered outcome carries no selection; one flag names its kind.
+		const unanswered = {
+			cancelled: { text: CANCELLED_RESULT_TEXT, flag: {} },
+			skipped: { text: SKIPPED_RESULT_TEXT, flag: { skipped: true } },
+			backgrounded: { text: BACKGROUNDED_RESULT_TEXT, flag: { backgrounded: true } },
+			dismissed: { text: DISMISSED_RESULT_TEXT, flag: { dismissed: true } },
+		}[outcome.kind];
 		return {
-			content: [{ type: "text", text: CANCELLED_RESULT_TEXT }],
+			content: [{ type: "text", text: unanswered.text }],
 			details: {
 				questions,
 				answers: [],
 				notes: [],
-				cancelled: true,
-			},
-		};
-	}
-	if (outcome.kind === "skipped") {
-		// Distinct from cancelled: the user deliberately answered in chat, so the
-		// agent must treat the following chat message as the real answer.
-		return {
-			content: [{ type: "text", text: SKIPPED_RESULT_TEXT }],
-			details: {
-				questions,
-				answers: [],
-				notes: [],
-				cancelled: false,
-				skipped: true,
+				cancelled: outcome.kind === "cancelled",
+				...unanswered.flag,
 			},
 		};
 	}
@@ -181,7 +188,7 @@ export function isNoteRow(cursor: number, optionCount: number): boolean {
 	return cursor === optionCount;
 }
 
-export interface SkipInputEligibility {
+export interface ChatYieldInput {
 	/** The active question modal is minimized according to its run lifecycle,
 	 * independent of any disposable dock component. */
 	minimized: boolean;
@@ -191,12 +198,13 @@ export interface SkipInputEligibility {
 	text: string;
 }
 
-/** A chat message skips a pending question only when the modal is minimized and
+/** A chat message yields a pending question to the chat (index.ts
+ * ActiveQuestion.yieldToChat) only when the modal is minimized and
  * the message is a genuine interactive, non-command, non-empty submission.
  * Extension commands are dispatched before the input event, so a plain
  * "/question" text never reaches this check, but the guard stays as defense in
  * depth against future dispatch-order changes. */
-export function isSkipEligibleInput(eligibility: SkipInputEligibility): boolean {
+export function isChatYieldInput(eligibility: ChatYieldInput): boolean {
 	const text = eligibility.text.trim();
 	return (
 		eligibility.minimized &&

@@ -15,6 +15,7 @@ import {
 import {
   createQuestionModalComponent,
   createQuestionModalDraft,
+  type QuestionModalDraft,
 } from "./modal-component.ts";
 import { QuestionPresentationLifecycle } from "./presentation-lifecycle.ts";
 
@@ -33,6 +34,11 @@ export interface QuestionModalController {
   expand(): void;
   /** Resolve as skipped (the user answered in chat). Idempotent. */
   skip(): void;
+  /** Resolve as backgrounded (index.ts input handler). Returns whether this
+   * call settled the run, so the caller moves the draft only once. */
+  background(): boolean;
+  /** Resolve as dismissed (Ctrl+C or header click). Idempotent. */
+  dismiss(): void;
   /** Resolve as cancelled — abort or shutdown, never a user gesture. Keeps the
    * pre-existing interrupted/error path and lets an aborted turn finalize
    * promptly instead of waiting for a modal nobody can reach. Idempotent. */
@@ -46,8 +52,11 @@ export interface QuestionModalRun {
 
 export interface QuestionModalSession {
   controller: QuestionModalController;
-  /** Settles when the run ends (answer, skip, cancel or presentation failure). */
+  /** Settles when the run ends (answer, skip, background, dismiss, cancel or
+   * presentation failure). */
   completion: Promise<QuestionModalRun>;
+  /** Plain draft values, so a backgrounded question keeps its answers so far. */
+  draft: QuestionModalDraft;
 }
 
 export interface QuestionModalOptions {
@@ -55,6 +64,8 @@ export interface QuestionModalOptions {
   minimizable?: boolean;
   /** Create the draft/controller without taking dock ownership yet. */
   initiallyMinimized?: boolean;
+  /** Continue an existing draft instead of starting empty. */
+  draft?: QuestionModalDraft;
   /** Fires on minimize/expand. A non-minimizable modal never reports
    * "minimized", so gate modals show no pending indicator. */
   onStateChange?: (state: QuestionModalState) => void;
@@ -91,8 +102,11 @@ export function openQuestionModal(
         minimize: () => {},
         expand: () => {},
         skip: () => {},
+        background: () => false,
+        dismiss: () => {},
         cancel: () => {},
       },
+      draft: createQuestionModalDraft(params),
       completion: Promise.resolve({
         outcome,
         result: {
@@ -117,7 +131,7 @@ export function openQuestionModal(
   const minimizable = options.minimizable ?? true;
   const latch = createOutcomeLatch<QuestionModalOutcome>();
   const lifecycle = new QuestionPresentationLifecycle();
-  const draft = createQuestionModalDraft(params);
+  const draft = options.draft ?? createQuestionModalDraft(params);
   let activePresentation:
     | {
         generation: number;
@@ -146,9 +160,10 @@ export function openQuestionModal(
   };
 
   const settle = (outcome: QuestionModalOutcome, generation?: number) => {
-    if (!lifecycle.settle(generation)) return;
+    if (!lifecycle.settle(generation)) return false;
     latch.settle(outcome);
     closePresentation(outcome, generation);
+    return true;
   };
 
   const minimize = (generation?: number) => {
@@ -174,6 +189,7 @@ export function openQuestionModal(
           {
             minimize: () => minimize(generation),
             skip: () => settle({ kind: "skipped" }, generation),
+            dismiss: () => settle({ kind: "dismissed" }, generation),
           },
           (outcome) => settle(outcome, generation),
         );
@@ -210,6 +226,8 @@ export function openQuestionModal(
       present(generation);
     },
     skip: () => settle({ kind: "skipped" }),
+    background: () => settle({ kind: "backgrounded" }),
+    dismiss: () => settle({ kind: "dismissed" }),
     cancel: () => settle({ kind: "cancelled" }),
   };
 
@@ -227,5 +245,5 @@ export function openQuestionModal(
   const initialGeneration = options.initiallyMinimized ? undefined : lifecycle.show();
   if (initialGeneration !== undefined) present(initialGeneration);
 
-  return { controller, completion };
+  return { controller, completion, draft };
 }

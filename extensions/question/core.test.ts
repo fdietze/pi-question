@@ -8,10 +8,12 @@ import {
 	formatBusyQuestionResult,
 	formatQuestionResult,
 	isNoteRow,
-	isSkipEligibleInput,
+	isChatYieldInput,
 	type QuestionModalOutcome,
 	shouldSettleModalOnShutdown,
 	SKIPPED_RESULT_TEXT,
+	BACKGROUNDED_RESULT_TEXT,
+	DISMISSED_RESULT_TEXT,
 } from "./core.ts";
 
 const q = (question: string, labels: string[]) => ({ question, labels });
@@ -135,20 +137,20 @@ test("isNoteRow: true only at index optionCount", () => {
 	assert.equal(isNoteRow(0, 0), true);
 });
 
-test("isSkipEligibleInput: only interactive non-command text while minimized", () => {
+test("isChatYieldInput: only interactive non-command text while minimized", () => {
 	const base = { minimized: true, source: "interactive", text: "use sqlite" };
-	assert.equal(isSkipEligibleInput(base), true);
+	assert.equal(isChatYieldInput(base), true);
 	// Shown modal: the dock owns input, so a submission can only be synthetic.
-	assert.equal(isSkipEligibleInput({ ...base, minimized: false }), false);
+	assert.equal(isChatYieldInput({ ...base, minimized: false }), false);
 	// Extension-injected messages (redelivery, sendUserMessage) must not skip.
-	assert.equal(isSkipEligibleInput({ ...base, source: "extension" }), false);
-	assert.equal(isSkipEligibleInput({ ...base, source: "rpc" }), false);
+	assert.equal(isChatYieldInput({ ...base, source: "extension" }), false);
+	assert.equal(isChatYieldInput({ ...base, source: "rpc" }), false);
 	// Commands and empty submissions never skip.
-	assert.equal(isSkipEligibleInput({ ...base, text: "/question" }), false);
-	assert.equal(isSkipEligibleInput({ ...base, text: "  " }), false);
-	assert.equal(isSkipEligibleInput({ ...base, text: "" }), false);
+	assert.equal(isChatYieldInput({ ...base, text: "/question" }), false);
+	assert.equal(isChatYieldInput({ ...base, text: "  " }), false);
+	assert.equal(isChatYieldInput({ ...base, text: "" }), false);
 	// Leading whitespace before a slash is still a command.
-	assert.equal(isSkipEligibleInput({ ...base, text: "  /model" }), false);
+	assert.equal(isChatYieldInput({ ...base, text: "  /model" }), false);
 });
 
 test("escapeAction: live and idle modals minimize, gate-opened modals skip", () => {
@@ -201,4 +203,26 @@ test("createOutcomeLatch: abort settles cancelled exactly once", async () => {
 		formatQuestionResult(params, await latch.promise).details.cancelled,
 		true,
 	);
+});
+
+test("formatQuestionResult: backgrounded and dismissed each set exactly their own flag", () => {
+	const params = {
+		questions: [{ question: "Ship it?", options: [{ label: "Yes" }] }],
+	};
+	for (const [kind, text] of [
+		["backgrounded", BACKGROUNDED_RESULT_TEXT],
+		["dismissed", DISMISSED_RESULT_TEXT],
+	] as const) {
+		const result = formatQuestionResult(params, { kind });
+		assert.deepEqual(result, {
+			content: [{ type: "text", text }],
+			details: {
+				questions: [{ question: "Ship it?", options: ["Yes"] }],
+				answers: [],
+				notes: [],
+				cancelled: false,
+				[kind]: true,
+			},
+		});
+	}
 });

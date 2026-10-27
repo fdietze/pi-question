@@ -59,3 +59,9 @@ test("background answer repeats offered options and numbers picks by offered pos
     'Q2 "When?"', "  offered: 1. Now", "  selected: (no selection) | note: later",
   ].join("\n"));
 });
+
+test("background dismissal names the dismissed questions without selections", () => {
+  const dismissed = formatQuestionResult(params, { kind: "dismissed" });
+  const batch = loadBackgroundBatches([entry(pending), entry({ ...answered, result: dismissed })]).get("request")!;
+  assert.equal(formatBackgroundAnswer(batch), 'The user dismissed your background question.\nQ1 "Ship?"');
+});
