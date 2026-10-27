@@ -32,8 +32,9 @@ The user interface:
 - Batch view: list of all questions with the active one below, `Tab`/`Shift+Tab` switch questions, `Enter` advances (submits on the last), `Space` toggles options, typing jumps to the note.
 - `Esc` minimizes the dock. `/question` re-opens it or offers a choice when several batches are pending; an indicator shows the pending count.
 - New background questions open immediately unless another form is already shown. The current form and draft stay intact; a blocking question takes initial presentation priority.
-- Switching batches preserves drafts during the session. There is no background skip or dismiss action.
-- Sending a chat message skips a **minimized blocking** question and reaches the agent normally. Background questions stay open through chat messages and agent interruption.
+- Switching batches preserves drafts during the session.
+- `Ctrl+C` dismisses the shown batch. The agent learns which questions were dismissed; dismissing never wakes an idle agent. In fullscreen mode the `ctrl+c dismiss · esc minimize` labels in the top border are clickable.
+- Sending a chat message while a **blocking** question is minimized moves it to the background with its draft and reaches the agent normally; the agent is told the answer will follow. Background questions stay open through chat messages and agent interruption.
 
 Open background questions and submitted answers survive restart or reload and belong to their session branch. Unsubmitted drafts do not survive restart. Interrupted blocking calls use their existing recovery flow; background calls never wait for an answer during startup.
 

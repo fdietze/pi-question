@@ -19,7 +19,7 @@ npm pack --dry-run
 
 `index.ts` is the Pi entry point and imperative shell: tool/command registration, one blocking-call latch, lifecycle hooks, shared pending-count widget and batch selection.
 
-`blocking` defaults to `true`. A blocking call awaits its modal; chat skips it only while minimized, and abort cancels it. `blocking: false` persists a background batch and returns immediately. `background-questions.ts` owns multiple background lifetimes and draft-preserving controllers; chat and initiating abort do not settle them. Only answers end background batches.
+`blocking` defaults to `true`. A blocking call awaits its modal; chat while minimized moves it to the background (recovered calls are skipped), `Ctrl+C` dismisses it, and abort cancels it. `blocking: false` persists a background batch and returns immediately. `background-questions.ts` owns multiple background lifetimes and draft-preserving controllers; chat and initiating abort do not settle them. Only answers or dismissals end background batches; dismissals never wake the agent.
 
 `modal.ts` supplies controllers and completion promises; `modal-component.ts` renders one visible dock. `presentation-lifecycle.ts` generation-counts transitions to reject stale callbacks. Blocking questions take initial presentation priority; `/question` selects among batches. Drafts survive switching, not restart or branch changes.
 
@@ -44,7 +44,7 @@ Blocking recovery remains `question-recovery-v1` through `recovery.ts`. Backgrou
 - `modal.ts`, `modal-component.ts`: dock controller and TUI component
 - `presentation-lifecycle.ts`: disposable-presentation state machine
 - `recovery.ts`: recovery records, context repair, startup selection
-- `core.ts`: result formatting, cursor bounds, skip/abort predicates
+- `core.ts`: result formatting, cursor bounds, chat-yield/abort predicates
 - adjacent `*.test.ts` files test the pure modules; `index.test.ts` is the Pi I/O/modal-input integration harness
 
 ## Change rules

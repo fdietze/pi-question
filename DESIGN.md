@@ -6,15 +6,15 @@ The `question` tool presents one or more multi-select questions in a dock below 
 
 ## Question lifetimes
 
-`index.ts` owns at most one blocking call or blocking recovery operation. A second blocking call is rejected. Blocking calls keep their tool promise pending; abort cancels them, and a normal chat submission skips a minimized blocking call. The input handler waits for the result or recovery marker before passing that chat message onward.
+`index.ts` owns at most one blocking call or blocking recovery operation. A second blocking call is rejected. Blocking calls keep their tool promise pending; abort cancels them, and a normal chat submission moves a minimized live blocking call to the background: the call settles with a backgrounded result and the same tool-call ID, parameters and draft become a background batch. A minimized recovered blocking call is skipped instead, because its tool call already ended. The input handler waits for the result or recovery marker before passing that chat message onward.
 
-`background-questions.ts` owns multiple independent background batches. Their lifetime does not depend on the initiating tool promise or abort signal. Chat and agent interruption leave them open; only answering settles them. There is no background skip or dismiss action.
+`background-questions.ts` owns multiple independent background batches. Their lifetime does not depend on the initiating tool promise or abort signal. Chat and agent interruption leave them open; only answering or dismissing settles them. A dismissal is persisted and delivered like an answer, but with `triggerTurn: false`, so it informs the agent at its next turn without waking it. This relies on pi >= 1.4 appending non-triggering custom messages only at turn boundaries.
 
 ## Shared presentation
 
 All batches share one visible dock. New background requests open the view immediately, including when it was minimized, but do not replace an already visible form. A blocking question takes initial presentation priority and parks the background draft. `/question` uses Pi's selection dialog when several batches are pending, allowing the user to choose their order. Each batch retains its own in-memory controller and draft when switching. Drafts are not persisted across restart or branch changes.
 
-`modal.ts` owns a controller and completion promise; `modal-component.ts` renders the form. `Esc` minimizes without settling. `presentation-lifecycle.ts` generation-counts transitions so stale callbacks from a disposed presentation cannot minimize or settle a newer one. `index.ts` owns the shared pending-count widget, avoiding competing controllers clearing one another's indicator.
+`modal.ts` owns a controller and completion promise; `modal-component.ts` renders the form. `Esc` minimizes without settling; `Ctrl+C` dismisses. The top border shows both actions; `headerLayout` computes their columns once for rendering and for mouse clicks, which pi delivers only in fullscreen mode. `presentation-lifecycle.ts` generation-counts transitions so stale callbacks from a disposed presentation cannot minimize or settle a newer one. `index.ts` owns the shared pending-count widget, avoiding competing controllers clearing one another's indicator.
 
 ## Background persistence and delivery
 
@@ -37,7 +37,7 @@ Queued messages can outlive a stopped run and a branch change. The `message_end`
 
 Explicit non-blocking calls and known background call IDs are excluded from blocking recovery. If a crash leaves a persisted background request without its acknowledgement, context repair supplies only the missing acknowledgement. A completed tool result is never replaced with the later answer.
 
-A recovered blocking modal may gate a new agent turn. That gate cannot be minimized because Pi dispatches no editor input while awaiting it; `Esc` skips it instead. Idle recovery presentations remain minimizable. This distinction is unchanged by the background mode.
+A recovered blocking modal may gate a new agent turn. That gate cannot be minimized because Pi dispatches no editor input while awaiting it; `Esc` skips it instead. Idle recovery presentations remain minimizable. Dismissing a recovered question records the dismissed result but sends no continuation and is never redelivered at startup. This distinction is unchanged by the background mode.
 
 ## Source map and verification
 
