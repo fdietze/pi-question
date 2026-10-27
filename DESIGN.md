@@ -29,7 +29,7 @@ An in-flight set prevents repeated enqueueing during a run. It is reset when the
 
 Startup restores the ledger synchronously and schedules guarded presentation and delivery without awaiting an answer. Background questions never enter the blocking recovery gate. Shutdown closes presentations without settling pending background records. Branch changes rebuild the ledger and invalidate old controller callbacks.
 
-Queued messages can outlive a stopped run and a branch change. The `message_end` hook checks for the matching answered record on the current branch and for prior delivery. An invalid or duplicate answer is replaced with an empty, hidden `question-answer-discarded` custom message before persistence and display. The `context` hook removes discarded or unassociated answers entirely: hiding a message alone does not exclude it from model context.
+Queued messages can outlive a stopped run and a branch change. The `message_end` hook checks for the matching answered record on the current branch and for prior delivery. An invalid or duplicate answer is replaced with an empty, hidden `question-answer-discarded` custom message before persistence and display. The `context` hook removes discarded, unassociated or duplicate answers entirely (pi skips `message_end` for non-triggering dismissals appended at a turn boundary): hiding a message alone does not exclude it from model context.
 
 ## Blocking recovery compatibility
 

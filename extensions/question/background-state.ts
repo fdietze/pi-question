@@ -72,6 +72,25 @@ export function isAssociatedAnswer(message: unknown, batches: ReadonlyMap<string
     details?.answerId === batch.answered.answerId;
 }
 
+// The model sees each answer at most once. message_end tombstones duplicates,
+// but pi skips that hook for non-triggering (dismissal) messages appended at a
+// turn boundary, so context is the authoritative dedupe point.
+export function filterBackgroundAnswers<T extends { role: string }>(
+  messages: readonly T[], batches: ReadonlyMap<string, BackgroundBatch>,
+): T[] {
+  const seen = new Set<unknown>();
+  return messages.filter((message) => {
+    if (message.role !== "custom") return true;
+    const customType = object(message)?.customType;
+    if (customType === DISCARDED_ANSWER_MESSAGE_TYPE) return false;
+    if (customType !== ANSWER_MESSAGE_TYPE) return true;
+    const answerId = object(object(message)?.details)?.answerId;
+    if (!isAssociatedAnswer(message, batches) || seen.has(answerId)) return false;
+    seen.add(answerId);
+    return true;
+  });
+}
+
 export function queuedQuestionResult() {
   return { content: [{ type: "text" as const, text: "Queued for the user. Keep working without the answer; it arrives later as a separate message." }], details: undefined };
 }

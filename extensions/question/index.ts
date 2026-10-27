@@ -10,7 +10,7 @@ import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { createBackgroundQuestions } from "./background-questions.ts";
 import {
-  ANSWER_MESSAGE_TYPE, DISCARDED_ANSWER_MESSAGE_TYPE, isAssociatedAnswer,
+  ANSWER_MESSAGE_TYPE, DISCARDED_ANSWER_MESSAGE_TYPE, filterBackgroundAnswers, isAssociatedAnswer,
   loadBackgroundBatches, repairBackgroundReceipts,
 } from "./background-state.ts";
 import {
@@ -287,9 +287,7 @@ export default function question(pi: ExtensionAPI) {
 
   pi.on("context", (event, ctx) => {
     const batches = loadBackgroundBatches(ctx.sessionManager.getBranch());
-    const filtered = event.messages.filter((message) => message.role !== "custom" ||
-      (message.customType !== DISCARDED_ANSWER_MESSAGE_TYPE &&
-        (message.customType !== ANSWER_MESSAGE_TYPE || isAssociatedAnswer(message, batches))));
+    const filtered = filterBackgroundAnswers(event.messages, batches);
     const repaired = repairBackgroundReceipts(filtered, batches.values());
     return { messages: repairQuestionContext(repaired, recoveries.values()) };
   });

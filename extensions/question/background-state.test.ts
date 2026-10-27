@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { formatQuestionResult } from "./core.ts";
 import { BACKGROUND_ENTRY_TYPE, ANSWER_MESSAGE_TYPE, loadBackgroundBatches,
-  isAssociatedAnswer, repairBackgroundReceipts, formatBackgroundAnswer, type BackgroundPending } from "./background-state.ts";
+  isAssociatedAnswer, repairBackgroundReceipts, formatBackgroundAnswer, filterBackgroundAnswers, DISCARDED_ANSWER_MESSAGE_TYPE, type BackgroundPending } from "./background-state.ts";
 import { findLatestDanglingQuestionCall, selectRecoveryGate } from "./recovery.ts";
 
 const params = { questions: [{ question: "Ship?", options: [{ label: "Yes" }] }] };
@@ -64,4 +64,13 @@ test("background dismissal names the dismissed questions without selections", ()
   const dismissed = formatQuestionResult(params, { kind: "dismissed" });
   const batch = loadBackgroundBatches([entry(pending), entry({ ...answered, result: dismissed })]).get("request")!;
   assert.equal(formatBackgroundAnswer(batch), 'The user dismissed your background question.\nQ1 "Ship?"');
+});
+
+test("context keeps each associated answer once and drops tombstones and strays", () => {
+  const batches = loadBackgroundBatches([entry(pending), entry(answered)]);
+  const answer = { role: "custom", ...message };
+  const user = { role: "user" };
+  const stray = { role: "custom", customType: ANSWER_MESSAGE_TYPE, details: { requestId: "request", answerId: "other" } };
+  const tombstone = { role: "custom", customType: DISCARDED_ANSWER_MESSAGE_TYPE };
+  assert.deepEqual(filterBackgroundAnswers([user, answer, stray, tombstone, answer], batches), [user, answer]);
 });
