@@ -360,3 +360,14 @@ test("header actions name their keys and are clickable", async () => {
   h.mouse({ type: "click", x: at("ctrl+c dismiss") + 3 });
   assert.equal((await blocking).details.dismissed, true);
 });
+
+test("multi-question list shows each question's checked labels and note start", async () => {
+  const h = harness();
+  const two = { questions: [params("First?").questions[0], params("Second?").questions[0]] };
+  await h.execute("multi", { ...two, blocking: false });
+  h.key(" ");
+  h.key("remember this please");
+  assert.match(h.render()!, /1\. First\?\s+→ Yes ✎ "remember this p…"/);
+  assert.doesNotMatch(h.render()!.split("2. Second?")[1].split("\n")[0], /→|✎/);
+  h.emit("session_shutdown", { reason: "reload" });
+});

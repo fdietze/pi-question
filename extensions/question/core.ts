@@ -118,6 +118,32 @@ export function formatSelection(parts: string[], note: string | null): string {
 	return note !== null ? `${selStr} | note: ${note}` : selStr;
 }
 
+const SUMMARY_LABEL_CHARS = 12;
+const SUMMARY_NOTE_CHARS = 15;
+const SUMMARY_MAX_LABELS = 2;
+
+function clip(text: string, max: number): string {
+	const chars = [...text];
+	return chars.length > max ? `${chars.slice(0, max).join("")}…` : text;
+}
+
+/** Compact one-line view of a question's draft for the question list of a
+ * multi-question dock: `→ Postgres, Fly +1 ✎ "needs JSONB sup…"`. Empty when
+ * nothing is checked and the note is blank, so unanswered questions stay bare.
+ * Pure (Functional Core): the dock only styles and places the string. */
+export function summarizeAnswer(labels: string[], checked: boolean[], note: string): string {
+	const picked = labels.filter((_, i) => checked[i]);
+	const parts: string[] = [];
+	if (picked.length > 0) {
+		const shown = picked.slice(0, SUMMARY_MAX_LABELS).map((l) => clip(l, SUMMARY_LABEL_CHARS));
+		const more = picked.length - shown.length;
+		parts.push(`→ ${shown.join(", ")}${more > 0 ? ` +${more}` : ""}`);
+	}
+	const flat = note.replace(/\s+/g, " ").trim();
+	if (flat) parts.push(`✎ "${clip(flat, SUMMARY_NOTE_CHARS)}"`);
+	return parts.join(" ");
+}
+
 // Rows are: option rows 0..optionCount-1, then the note row at index optionCount.
 // Functional Core / Imperative Shell: both live execution and session recovery use
 // this constructor so their persisted meaning cannot drift apart.

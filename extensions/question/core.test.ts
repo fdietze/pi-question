@@ -11,6 +11,7 @@ import {
 	isChatYieldInput,
 	type QuestionModalOutcome,
 	shouldSettleModalOnShutdown,
+	summarizeAnswer,
 	SKIPPED_RESULT_TEXT,
 	BACKGROUNDED_RESULT_TEXT,
 	DISMISSED_RESULT_TEXT,
@@ -225,4 +226,26 @@ test("formatQuestionResult: backgrounded and dismissed each set exactly their ow
 			},
 		});
 	}
+});
+
+test("summarizeAnswer: empty when nothing is checked and the note is blank", () => {
+	assert.equal(summarizeAnswer(["A", "B"], [false, false], "  \n "), "");
+});
+
+test("summarizeAnswer: one pick plus a clipped single-line note", () => {
+	assert.equal(
+		summarizeAnswer(["Postgres", "SQLite"], [true, false], "needs JSONB support\nplease"),
+		'→ Postgres ✎ "needs JSONB sup…"',
+	);
+});
+
+test("summarizeAnswer: at most two labels, each clipped, rest counted", () => {
+	assert.equal(
+		summarizeAnswer(["Fly.io hosting", "Hetzner", "AWS", "GCP"], [true, true, true, true], ""),
+		"→ Fly.io hosti…, Hetzner +2",
+	);
+});
+
+test("summarizeAnswer: note only", () => {
+	assert.equal(summarizeAnswer(["A"], [false], "only in stage"), '✎ "only in stage"');
 });

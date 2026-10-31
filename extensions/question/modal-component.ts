@@ -19,6 +19,7 @@ import {
   escapeAction,
   formatBatchResult,
   isNoteRow,
+  summarizeAnswer,
   type QuestionModalOutcome,
   type QuestionParams,
 } from "./core.ts";
@@ -391,6 +392,23 @@ export function createQuestionModalComponent(
             return qStyle(t);
           },
         );
+        // Draft summary: appended to the question's last wrapped line when it
+        // fits, otherwise on its own indented line, so it never wraps.
+        const summary = summarizeAnswer(
+          questions[qi].options.map((o) => o.label),
+          draft.checked[qi],
+          noteEditors[qi].getText(),
+        );
+        if (summary) {
+          const last = lines.length - 1;
+          if (visibleWidth(lines[last]) + 2 + visibleWidth(summary) <= width) {
+            lines[last] += "  " + theme.fg("muted", summary);
+          } else {
+            lines.push(
+              truncateToWidth("      " + theme.fg("muted", summary), width),
+            );
+          }
+        }
       }
       lines.push(
         truncateToWidth(
