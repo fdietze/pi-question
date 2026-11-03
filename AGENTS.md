@@ -4,11 +4,10 @@ Keep this file, `README.md`, and `DESIGN.md` true to the code whenever architect
 
 ## Setup and verification
 
-Nix is the source of truth for Node.js 24, TypeScript Go, and oxlint. npm supplies only pinned development type libraries.
+Nix is the source of truth for Node.js 24, TypeScript Go, and oxlint. npm supplies only pinned development type libraries.  Entering `nix develop` reinstalls them (`npm ci`) when `package-lock.json` differs from the one that produced `node_modules` (stamp: `node_modules/.package-lock.sha256`).
 
 ```bash
-nix develop
-npm ci
+nix develop   # runs `npm ci` whenever package-lock.json changed
 npm run ci
 npm pack --dry-run
 ```

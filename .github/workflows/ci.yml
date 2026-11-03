@@ -12,5 +12,4 @@ jobs:
       # Keep CI and local development on the same Nix-owned toolchain.
       # https://github.com/DeterminateSystems/nix-installer-action
       - uses: DeterminateSystems/nix-installer-action@main
-      - run: nix develop --command npm ci
       - run: nix develop --command npm run ci

@@ -43,8 +43,7 @@ Saved background answers whose message has not been recorded are retried after r
 ## Development
 
 ```bash
-nix develop
-npm ci
+nix develop   # runs `npm ci` whenever package-lock.json changed
 npm run ci
 npm pack --dry-run
 ```
