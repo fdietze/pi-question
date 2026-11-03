@@ -4,11 +4,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { findPackageJSON } from "node:module";
 import { pathToFileURL } from "node:url";
-import { AgentSession } from "@earendil-works/pi-coding-agent";
+import { AgentSession, initTheme } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 import question from "./index.ts";
 import { ANSWER_MESSAGE_TYPE, BACKGROUND_ENTRY_TYPE, loadBackgroundBatches } from "./background-state.ts";
+
+// pi initialises its global theme at startup; markdown rendering reads it.
+initTheme();
 
 const params = (question = "Ship?") => ({ questions: [{ question, options: [{ label: "Yes" }, { label: "No" }] }] });
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 5));
@@ -295,6 +298,18 @@ test("context is shown above the questions and not echoed in the result", async 
   h.key("\r");
   const result = await pending;
   assert.doesNotMatch(result.content[0].text, /release day/);
+});
+
+test("context renders as markdown", async () => {
+  const h = harness();
+  const pending = h.execute("md", { context: "Pick **one** of:\n\n- `alpha`\n- beta", ...params("Ship?") });
+  await flush();
+  const view = h.render()!;
+  assert.doesNotMatch(view, /\*\*|`/);
+  assert.match(view, /Pick .*one.* of:/);
+  assert.match(view, /alpha/);
+  h.key("\r");
+  await pending;
 });
 
 test("chat while a live blocking question is minimized moves it, with its draft, to the background", async () => {

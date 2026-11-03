@@ -1,6 +1,6 @@
 // Focused rendering and input component for the question UI.
 
-import { Theme } from "@earendil-works/pi-coding-agent";
+import { getMarkdownTheme, Theme } from "@earendil-works/pi-coding-agent";
 import {
   Editor,
   type Component,
@@ -8,6 +8,7 @@ import {
   type TuiMouseEvent,
   type TuiMouseEventResult,
   Key,
+  Markdown,
   matchesKey,
   truncateToWidth,
   type TUI,
@@ -71,6 +72,12 @@ export function createQuestionModalComponent(
   // width but no state change, so the cache must also invalidate on width
   // change — otherwise stale lines persist until the next keypress.
   let cachedWidth: number | undefined;
+  // The context is agent-written prose, often with lists, code and emphasis, so
+  // it renders as markdown in pi's active markdown theme. Markdown keeps its own
+  // per-width cache; it only needs invalidating when the theme changes.
+  const contextMarkdown = params.context
+    ? new Markdown(params.context, 1, 0, getMarkdownTheme())
+    : undefined;
 
   const editorTheme: EditorTheme = {
     borderColor: (s) => theme.fg("accent", s),
@@ -346,8 +353,8 @@ export function createQuestionModalComponent(
     lines.push(truncateToWidth(renderHeader(width), width));
     // The agent's background for the user, so the batch is answerable without
     // the chat (background batches are often answered much later).
-    if (params.context) {
-      addWrapped(lines, width, params.context, " ", (t) => theme.fg("text", t));
+    if (contextMarkdown) {
+      lines.push(...contextMarkdown.render(width));
       lines.push("");
     }
 
@@ -455,6 +462,7 @@ export function createQuestionModalComponent(
     render,
     invalidate: () => {
       cachedLines = undefined;
+      contextMarkdown?.invalidate();
     },
     handleInput,
     handleMouse,

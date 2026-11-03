@@ -10,7 +10,7 @@ pi install git:github.com/fdietze/pi-question
 
 ## Interface
 
-The agent receives the `question` tool: an optional `context` shown above the questions, and one or more questions per call, each with options (optional short `tag` badge, e.g. "recommended") and its own free-text note. The user answers all questions of a call together.
+The agent receives the `question` tool: an optional `context` (rendered as markdown) shown above the questions, and one or more questions per call, each with options (optional short `tag` badge, e.g. "recommended") and its own free-text note. The user answers all questions of a call together.
 
 - `blocking` omitted or `true`: wait for a tool result. Only one blocking call may be pending; another blocking call is rejected.
 - `blocking: false`: store and immediately display the questions, then return an acknowledgement. Multiple background batches may accumulate alongside a blocking call. Each answer arrives as a `question-answer` custom message associated with its original call.
