@@ -107,7 +107,7 @@ test("background calls return immediately, coexist, preserve draft, and ignore c
   const draft = h.render();
   await h.execute("second", { ...params("Second?"), blocking: false });
   assert.equal(h.render(), draft);
-  assert.match(h.widget()!, /\? 2\s+question batches/);
+  assert.match(h.widget()!, /2\s+question batches/);
   h.key("\x1b");
   await h.emit("input", { source: "interactive", text: "Keep working" });
   abort.abort();

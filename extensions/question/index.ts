@@ -88,7 +88,7 @@ const QuestionSchema = Type.Object({
 
 const QuestionParamsSchema = Type.Object({
   context: Type.Optional(Type.String({
-    description: "What you are working on and why you ask, in 1-3 sentences. Shown above the questions.",
+    description: "What you are working on and why you ask, in 1-3 sentences. Shown above the questions, rendered as markdown.",
   })),
   blocking: Type.Optional(Type.Boolean({
     description: "true (default): wait for the answer. false: queue the questions and keep working; the answer arrives later as a separate message.",
@@ -151,7 +151,7 @@ export default function question(pi: ExtensionAPI) {
       ctx.ui.setWidget(PENDING_WIDGET_KEY, undefined);
       return;
     }
-    const badge = `? ${count}`;
+    const badge = `${count}`;
     const text = ` question batch${count === 1 ? "" : "es"} pending · /question to answer${active?.controller.state() === "minimized" ? " · chatting moves the blocking one to background" : ""}`;
     ctx.ui.setWidget(PENDING_WIDGET_KEY, (_tui, theme) => ({
       // The `warning` role (not `accent`, which most pi UI uses) plus a bold inverse
