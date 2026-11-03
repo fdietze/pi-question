@@ -151,9 +151,17 @@ export default function question(pi: ExtensionAPI) {
       ctx.ui.setWidget(PENDING_WIDGET_KEY, undefined);
       return;
     }
-    const text = `? ${count} question batch${count === 1 ? "" : "es"} pending · /question to answer${active?.controller.state() === "minimized" ? " · chatting moves the blocking one to background" : ""}`;
+    const badge = `? ${count}`;
+    const text = ` question batch${count === 1 ? "" : "es"} pending · /question to answer${active?.controller.state() === "minimized" ? " · chatting moves the blocking one to background" : ""}`;
     ctx.ui.setWidget(PENDING_WIDGET_KEY, (_tui, theme) => ({
-      render: (width: number) => [truncateToWidth(theme.fg("accent", text), width)],
+      // The `warning` role (not `accent`, which most pi UI uses) plus a bold inverse
+      // count chip keeps the pending line from blending into the chrome.
+      render: (width: number) => [
+        truncateToWidth(
+          theme.inverse(theme.bold(theme.fg("warning", ` ${badge} `))) + theme.fg("warning", text),
+          width,
+        ),
+      ],
       invalidate: () => {},
     }));
   };
