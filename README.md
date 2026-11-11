@@ -34,6 +34,7 @@ The user interface:
 - New background questions open immediately unless another form is already shown. The current form and draft stay intact; a blocking question takes initial presentation priority.
 - Switching batches preserves drafts during the session.
 - `Ctrl+C` dismisses the shown batch. The agent learns which questions were dismissed; dismissing never wakes an idle agent. In fullscreen mode the `ctrl+c dismiss · esc minimize` labels in the top border are clickable.
+- In fullscreen mode, clicking the pending-questions line does the same as `/question`.
 - Sending a chat message while a **blocking** question is minimized moves it to the background with its draft and reaches the agent normally; the agent is told the answer will follow. Background questions stay open through chat messages and agent interruption.
 
 Open background questions and submitted answers survive restart or reload and belong to their session branch. Unsubmitted drafts do not survive restart. Interrupted blocking calls use their existing recovery flow; background calls never wait for an answer during startup.

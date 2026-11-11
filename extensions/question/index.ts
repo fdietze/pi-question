@@ -6,7 +6,7 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { Text, truncateToWidth, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { createBackgroundQuestions } from "./background-questions.ts";
 import {
@@ -163,6 +163,17 @@ export default function question(pi: ExtensionAPI) {
         ),
       ],
       invalidate: () => {},
+      // Click anywhere on the line = /question (pi fullscreen mode only; the
+      // keyboard path is the command). A press claims the gesture so pi routes
+      // the matching click here.
+      handleMouse: (event: TuiMouseEvent): TuiMouseEventResult | undefined => {
+        if (event.button !== "left") return undefined;
+        if (event.type === "click") {
+          openPending(ctx).catch((error) =>
+            ctx.ui.notify(`Failed to open questions: ${String(error)}`, "error"));
+        }
+        return event.type === "press" || event.type === "click" ? { handled: true } : undefined;
+      },
     }));
   };
 
@@ -372,9 +383,9 @@ export default function question(pi: ExtensionAPI) {
     await current.finished;
   });
 
-  pi.registerCommand("question", {
-    description: "Expand the pending question overlay",
-    handler: async (_args: string, ctx: ExtensionCommandContext) => {
+  // Shared by the /question command and the pending widget click, so both
+  // open the same dock or picker (DRY).
+  const openPending = async (ctx: ExtensionContext) => {
       if (pickerController) return;
       const blocking = active;
       const pending = backgrounds.pending();
@@ -408,7 +419,11 @@ export default function question(pi: ExtensionAPI) {
       const selected = choices.find((c) => c.label === choice);
       if (selected?.id) backgrounds.show(selected.id, ctx);
       else if (active === blocking) blocking?.controller.expand();
-    },
+  };
+
+  pi.registerCommand("question", {
+    description: "Expand the pending question overlay",
+    handler: async (_args: string, ctx: ExtensionCommandContext) => openPending(ctx),
   });
 
   // Inversion: provider-bound turns wait for recovery instead of racing an idle

@@ -91,6 +91,7 @@ function harness(initial: unknown[] = [], enqueue?: (message: any, options: any)
     deferPicker: () => { deferPicker = true; },
     resolvePicker: (choice?: string) => resolvePicker?.(choice),
     widget: () => widget?.({}, theme).render(100).join("\n"),
+    widgetComponent: () => widget?.({}, theme),
     maxVisible: () => maxVisible,
     visible: () => visible,
   };
@@ -385,4 +386,22 @@ test("multi-question list shows each question's checked labels and note start", 
   assert.match(h.render()!, /1\. First\?\s+→ Yes ✎ "remember this p…"/);
   assert.doesNotMatch(h.render()!.split("2. Second?")[1].split("\n")[0], /→|✎/);
   h.emit("session_shutdown", { reason: "reload" });
+});
+
+test("clicking the pending widget opens the questions like /question", async () => {
+  const h = harness();
+  const blocking = h.execute("blocking", params("Blocking?"));
+  await flush();
+  h.key("\x1b");
+  assert.equal(h.visible(), 0);
+  const widget = h.widget()!;
+  assert.match(widget, /pending/);
+  const line = h.widgetComponent();
+  assert.deepEqual(line.handleMouse({ type: "press", button: "left" }), { handled: true });
+  assert.equal(h.visible(), 0, "press alone does not open");
+  line.handleMouse({ type: "click", button: "left" });
+  await flush();
+  assert.equal(h.visible(), 1);
+  h.key("\x03");
+  await blocking;
 });
