@@ -33,6 +33,7 @@ The user interface:
 - `Esc` minimizes the dock. `/question` re-opens it or offers a choice when several batches are pending; an indicator shows the pending count.
 - New background questions open immediately unless another form is already shown. The current form and draft stay intact; a blocking question takes initial presentation priority.
 - Switching batches preserves drafts during the session.
+- Answering or dismissing a batch opens the next pending one (the one a blocking question displaced first, else the oldest). Minimizing or chatting opens nothing.
 - `Ctrl+C` dismisses the shown batch. The agent learns which questions were dismissed; dismissing never wakes an idle agent. In fullscreen mode the `ctrl+c dismiss · esc minimize` labels in the top border are clickable.
 - In fullscreen mode, clicking the pending-questions line does the same as `/question`.
 - Sending a chat message while a **blocking** question is minimized moves it to the background with its draft and reaches the agent normally; the agent is told the answer will follow. Background questions stay open through chat messages and agent interruption.

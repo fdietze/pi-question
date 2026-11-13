@@ -224,6 +224,13 @@ export interface ChatYieldInput {
 	text: string;
 }
 
+// The user finished a batch at the form (answer or dismissal) and is still
+// working through questions, so the next pending batch may open. Minimizing,
+// chatting and interruption mean the user turned away from the form.
+export function continuesToNextQuestion(outcome: QuestionModalOutcome): boolean {
+	return outcome.kind === "answered" || outcome.kind === "dismissed";
+}
+
 /** A chat message yields a pending question to the chat (index.ts
  * ActiveQuestion.yieldToChat) only when the modal is minimized and
  * the message is a genuine interactive, non-command, non-empty submission.

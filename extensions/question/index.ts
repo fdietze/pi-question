@@ -14,6 +14,7 @@ import {
   loadBackgroundBatches, repairBackgroundReceipts,
 } from "./background-state.ts";
 import {
+  continuesToNextQuestion,
   formatBusyQuestionResult,
   isChatYieldInput,
   shouldSettleModalOnShutdown,
@@ -207,6 +208,7 @@ export default function question(pi: ExtensionAPI) {
     });
     const operation = (async () => {
       let session: QuestionModalSession | undefined;
+      let next = false;
       try {
         // Known residual (pre-existing on master): pi's session replacement resets
         // extension UI without completing this modal, so the promise can outlive it.
@@ -235,7 +237,8 @@ export default function question(pi: ExtensionAPI) {
           finished: recoveryFinished,
         };
         updatePendingWidget(ctx);
-        const { result } = await opened.completion;
+        const { outcome, result } = await opened.completion;
+        next = continuesToNextQuestion(outcome);
         if (!runtimeActive) {
           throw new Error("Question recovery stopped with the session");
         }
@@ -288,7 +291,7 @@ export default function question(pi: ExtensionAPI) {
         if (session && active?.controller === session.controller) {
           active = undefined;
         }
-        if (session && runtimeActive) backgrounds.resume(ctx);
+        if (session && runtimeActive) backgrounds.resume(ctx, next);
         openingRecoveryId = undefined;
         openingRecoveryPromise = undefined;
         openingShouldSendContinuation = false;
@@ -576,11 +579,11 @@ export default function question(pi: ExtensionAPI) {
       const finished = new Promise<void>((resolve) => {
         resolveFinished = resolve;
       });
-      const settleActive = () => {
+      const settleActive = (next: boolean) => {
         if (active?.controller === session.controller) {
           active = undefined;
         }
-        if (runtimeActive) backgrounds.resume(ctx);
+        if (runtimeActive) backgrounds.resume(ctx, next);
         resolveFinished();
       };
       active = {
@@ -607,12 +610,14 @@ export default function question(pi: ExtensionAPI) {
       signal?.addEventListener("abort", onAbort, { once: true });
       if (signal?.aborted) onAbort();
 
+      let next = false;
       try {
         const run = await session.completion;
+        next = continuesToNextQuestion(run.outcome);
         return run.result;
       } finally {
         signal?.removeEventListener("abort", onAbort);
-        settleActive();
+        settleActive(next);
       }
     },
 

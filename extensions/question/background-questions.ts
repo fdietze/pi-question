@@ -86,6 +86,7 @@ export function createBackgroundQuestions(pi: ExtensionAPI, hooks: {
         if (selected === requestId) selected = undefined;
         hooks.changed(ctx);
         deliver(ctx);
+        autoShow(ctx);
       }).catch((error: unknown) => {
         if (stopped || generation !== epoch) return;
         // Presentation failure is not an answer: retain the durable request and
@@ -141,8 +142,12 @@ export function createBackgroundQuestions(pi: ExtensionAPI, hooks: {
       parked = shown() ? selected : undefined;
       minimize();
     },
-    resume(ctx: ExtensionContext) {
-      if (!shown() && !hooks.picking() && parked && batches.has(parked) && !batches.get(parked)?.answered) show(parked, ctx);
+    // After a blocking question: restore the batch it displaced; when the user
+    // finished it at the form, otherwise open the oldest pending batch.
+    resume(ctx: ExtensionContext, next: boolean) {
+      const restore = parked && !batches.get(parked)?.answered ? parked : undefined;
+      const target = restore ?? (next ? pending()[0]?.pending.requestId : undefined);
+      if (!shown() && !hooks.picking() && target) show(target, ctx);
       parked = undefined;
       hooks.changed(ctx);
     },

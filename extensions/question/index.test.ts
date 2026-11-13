@@ -405,3 +405,37 @@ test("clicking the pending widget opens the questions like /question", async () 
   h.key("\x03");
   await blocking;
 });
+
+test("answering or dismissing a batch opens the next pending one", async () => {
+  const h = harness();
+  await h.execute("first", { ...params("First?"), blocking: false });
+  await h.execute("second", { ...params("Second?"), blocking: false });
+  await h.execute("third", { ...params("Third?"), blocking: false });
+  h.key("\r"); await flush();
+  assert.match(h.render()!, /Second/);
+  h.key("\x03"); await flush();
+  assert.match(h.render()!, /Third/);
+  h.key("\x1b");
+  assert.equal(h.visible(), 0, "minimizing turns away from the form");
+  h.emit("session_shutdown", { reason: "reload" });
+});
+
+test("a finished blocking question opens a minimized background batch; chatting does not", async () => {
+  const h = harness();
+  await h.execute("background", { ...params("Background?"), blocking: false });
+  h.key("\x1b");
+  const answered = h.execute("answered", params("Blocking?"));
+  await flush();
+  h.key("\r");
+  await answered; await flush();
+  assert.match(h.render()!, /Background/);
+  h.key("\x1b");
+  const chatted = h.execute("chatted", params("Other?"));
+  await flush();
+  h.key("\x1b");
+  await h.emit("input", { source: "interactive", text: "Later" });
+  assert.equal((await chatted).details.backgrounded, true);
+  await flush();
+  assert.equal(h.visible(), 0, "the user chose the chat");
+  h.emit("session_shutdown", { reason: "reload" });
+});

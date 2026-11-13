@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
 	clampCursor,
+	continuesToNextQuestion,
 	createOutcomeLatch,
 	escapeAction,
 	formatBatchResult,
@@ -248,4 +249,13 @@ test("summarizeAnswer: at most two labels, each clipped, rest counted", () => {
 
 test("summarizeAnswer: note only", () => {
 	assert.equal(summarizeAnswer(["A"], [false], "only in stage"), '✎ "only in stage"');
+});
+
+test("continuesToNextQuestion: only finishing a batch at the form continues", () => {
+	const answer = { answers: [], notes: [], content: "" };
+	assert.equal(continuesToNextQuestion({ kind: "answered", answer }), true);
+	assert.equal(continuesToNextQuestion({ kind: "dismissed" }), true);
+	for (const kind of ["cancelled", "skipped", "backgrounded"] as const) {
+		assert.equal(continuesToNextQuestion({ kind }), false);
+	}
 });
