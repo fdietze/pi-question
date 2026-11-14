@@ -246,6 +246,7 @@ test("agent abort moves a blocking question to a background batch that survives 
   abort.abort();
   const result = await blocking;
   assert.equal(result.details.backgrounded, true);
+  assert.match(result.content[0].text, /run was interrupted/);
   const pending = [...loadBackgroundBatches(h.branch()).values()];
   assert.equal(pending.length, 1);
   assert.equal(pending[0].answered, undefined);

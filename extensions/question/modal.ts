@@ -36,7 +36,7 @@ export interface QuestionModalController {
   skip(): void;
   /** Resolve as backgrounded (index.ts input handler). Returns whether this
    * call settled the run, so the caller moves the draft only once. */
-  background(): boolean;
+  background(reason?: "interrupted"): boolean;
   /** Resolve as dismissed (Ctrl+C or header click). Idempotent. */
   dismiss(): void;
   /** Resolve as cancelled — abort or shutdown, never a user gesture. Keeps the
@@ -226,7 +226,7 @@ export function openQuestionModal(
       present(generation);
     },
     skip: () => settle({ kind: "skipped" }),
-    background: () => settle({ kind: "backgrounded" }),
+    background: (reason) => settle({ kind: "backgrounded", reason }),
     dismiss: () => settle({ kind: "dismissed" }),
     cancel: () => settle({ kind: "cancelled" }),
   };

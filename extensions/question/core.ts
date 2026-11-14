@@ -44,7 +44,8 @@ export type QuestionModalOutcome =
 	| { kind: "answered"; answer: QuestionModalAnswer }
 	| { kind: "cancelled" }
 	| { kind: "skipped" }
-	| { kind: "backgrounded" }
+	// "interrupted": an agent abort moved the question, not a chat message.
+	| { kind: "backgrounded"; reason?: "interrupted" }
 	| { kind: "dismissed" };
 
 // The chat message is not always a reply to the form: a recovered question can
@@ -58,6 +59,10 @@ export const SKIPPED_RESULT_TEXT =
 // first; otherwise the background answer follows (background-questions.ts).
 export const BACKGROUNDED_RESULT_TEXT =
 	"Moved to background: the user continued in chat. Read their chat message. If it does not settle these questions, the answer arrives later as a separate message.";
+
+// An abort (Esc, /new, quit) has no chat message to read; the answer comes later.
+export const INTERRUPTED_BACKGROUNDED_RESULT_TEXT =
+	"Moved to background: the run was interrupted. The answer arrives later as a separate message.";
 
 export const DISMISSED_RESULT_TEXT = "Not answered: the user dismissed the questions.";
 
@@ -160,7 +165,11 @@ export function formatQuestionResult(
 		const unanswered = {
 			cancelled: { text: CANCELLED_RESULT_TEXT, flag: {} },
 			skipped: { text: SKIPPED_RESULT_TEXT, flag: { skipped: true } },
-			backgrounded: { text: BACKGROUNDED_RESULT_TEXT, flag: { backgrounded: true } },
+			backgrounded: {
+				text: outcome.kind === "backgrounded" && outcome.reason === "interrupted"
+					? INTERRUPTED_BACKGROUNDED_RESULT_TEXT : BACKGROUNDED_RESULT_TEXT,
+				flag: { backgrounded: true },
+			},
 			dismissed: { text: DISMISSED_RESULT_TEXT, flag: { dismissed: true } },
 		}[outcome.kind];
 		return {

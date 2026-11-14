@@ -613,7 +613,7 @@ export default function question(pi: ExtensionAPI) {
       // aborts after session_shutdown, when the ctx is stale; there the call
       // stays dangling and blocking recovery restores it.
       const onAbort = () => {
-        if (runtimeActive && session.controller.background()) {
+        if (runtimeActive && session.controller.background("interrupted")) {
           backgrounds.adopt(toolCallId, params, session.draft, ctx);
         }
       };
