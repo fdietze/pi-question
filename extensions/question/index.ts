@@ -606,7 +606,17 @@ export default function question(pi: ExtensionAPI) {
       // Honor the tool's abort signal (Esc interrupt, /new, /fork, /resume):
       // without this the run would keep awaiting a modal the user can no longer
       // reach, leaving the session streaming and waitForIdle blocked.
-      const onAbort = () => session.controller.cancel();
+      // Only an answer or a dismissal ends a question: an agent abort (Esc,
+      // /new, /resume, and pi's quit, which aborts before session_shutdown)
+      // moves it to a durable background batch, so a restart restores it. The
+      // pending record is appended before the tool result settles. pi < 1.5
+      // aborts after session_shutdown, when the ctx is stale; there the call
+      // stays dangling and blocking recovery restores it.
+      const onAbort = () => {
+        if (runtimeActive && session.controller.background()) {
+          backgrounds.adopt(toolCallId, params, session.draft, ctx);
+        }
+      };
       signal?.addEventListener("abort", onAbort, { once: true });
       if (signal?.aborted) onAbort();
 

@@ -18,7 +18,7 @@ npm pack --dry-run
 
 `index.ts` is the Pi entry point and imperative shell: tool/command registration, one blocking-call latch, lifecycle hooks, shared pending-count widget and batch selection.
 
-`blocking` defaults to `true`. A blocking call awaits its modal; chat while minimized moves it to the background (recovered calls are skipped), `Ctrl+C` dismisses it, and abort cancels it. `blocking: false` persists a background batch and returns immediately. `background-questions.ts` owns multiple background lifetimes and draft-preserving controllers; chat and initiating abort do not settle them. Only answers or dismissals end background batches; dismissals never wake the agent.
+`blocking` defaults to `true`. A blocking call awaits its modal; chat while minimized moves it to the background (recovered calls are skipped), `Ctrl+C` dismisses it, and an agent abort (Esc, `/new`, quit) moves it to the background so a restart restores it. `blocking: false` persists a background batch and returns immediately. `background-questions.ts` owns multiple background lifetimes and draft-preserving controllers; chat and initiating abort do not settle them. Only answers or dismissals end background batches; dismissals never wake the agent.
 
 `modal.ts` supplies controllers and completion promises; `modal-component.ts` renders one visible dock. `presentation-lifecycle.ts` generation-counts transitions to reject stale callbacks. Blocking questions take initial presentation priority; answering or dismissing opens the next pending batch; `/question` selects among batches. Drafts survive switching, not restart or branch changes.
 

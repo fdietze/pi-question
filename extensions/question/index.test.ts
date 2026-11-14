@@ -227,6 +227,36 @@ test("picker owns the single UI, preserves background arrivals, and blocking cal
   h.emit("session_shutdown", { reason: "reload" });
 });
 
+test("quit keeps a blocking call dangling when pi aborts the agent after shutdown", async () => {
+  const h = harness();
+  const abort = new AbortController();
+  let settled = false;
+  void h.execute("blocking", params("Blocking?"), abort.signal).then(() => { settled = true; });
+  h.emit("session_shutdown", { reason: "quit" });
+  abort.abort();
+  await flush();
+  assert.equal(settled, false, "a persisted cancelled result would make the question unrecoverable");
+});
+
+test("agent abort moves a blocking question to a background batch that survives restart", async () => {
+  const h = harness();
+  const abort = new AbortController();
+  const blocking = h.execute("blocking", params("Blocking?"), abort.signal);
+  h.key(" ");
+  abort.abort();
+  const result = await blocking;
+  assert.equal(result.details.backgrounded, true);
+  const pending = [...loadBackgroundBatches(h.branch()).values()];
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].answered, undefined);
+  h.emit("session_shutdown", { reason: "quit" });
+  const restored = harness(h.branch());
+  await restored.emit("session_start", { reason: "resume" });
+  await flush();
+  assert.match(restored.render()!, /Blocking\?/);
+  restored.emit("session_shutdown", { reason: "quit" });
+});
+
 test("blocking abort does not replace a user-selected open background form", async () => {
   const h = harness();
   await h.execute("a", { ...params("A?"), blocking: false });
